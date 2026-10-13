@@ -28,6 +28,13 @@ endif()
 
 target_include_directories(
   oblib_base_without_pass INTERFACE
+  # The Rust SQL/NIO header is a core-owned FFI surface.  Keep it on the
+  # oblib/core interface instead of a directory-wide include path so plugin
+  # targets cannot inherit a core source-tree include by accident.
+  ${SQL_NIO_INCLUDE_DIR}
+  # Private source-only numerical algorithms shared with the GIS plugin.
+  # This adds no core source-tree path to plugin targets.
+  ${CMAKE_SOURCE_DIR}/include
   # oblib exposes no src-reachable -I -- not even the repo root ${CMAKE_SOURCE_DIR}.
   # So any include of src from oblib lib+unittests at compile time (both share/.. and full src/.. spellings)
   # is file-not-found. oblib itself needs no repo root: 0 src/.. ; 2 deps/.. resolved via same-directory.
@@ -316,22 +323,11 @@ if(WIN32)
     ${VCPKG_LIB_DIR}/libcurl.lib
     ${OPENSSL_LIB_DIR}/libssl.lib
     ${OPENSSL_LIB_DIR}/libcrypto.lib
-    ${VCPKG_LIB_DIR}/s2.lib
-    ${VCPKG_LIB_DIR}/abseil_dll.lib
-    ${VCPKG_LIB_DIR}/absl_flags_internal.lib
-    ${VCPKG_LIB_DIR}/absl_flags_reflection.lib
-    ${VCPKG_LIB_DIR}/absl_flags_marshalling.lib
-    ${VCPKG_LIB_DIR}/absl_flags_config.lib
-    ${VCPKG_LIB_DIR}/absl_flags_program_name.lib
-    ${VCPKG_LIB_DIR}/absl_flags_private_handle_accessor.lib
-    ${VCPKG_LIB_DIR}/absl_flags_commandlineflag.lib
-    ${VCPKG_LIB_DIR}/absl_flags_commandlineflag_internal.lib
     ${VCPKG_LIB_DIR}/roaring.lib
     ${VCPKG_LIB_DIR}/zlib.lib
     ${VCPKG_LIB_DIR}/icuin.lib
     ${VCPKG_LIB_DIR}/icudt.lib
     ${VCPKG_LIB_DIR}/icuuc.lib
-    ${VCPKG_LIB_DIR}/protobuf-c.lib
     ${VCPKG_LIB_DIR}/sqlite3.lib
     ${VCPKG_LIB_DIR}/pthreadVC3.lib
     ws2_32 crypt32 bcrypt userenv wldap32 advapi32
@@ -344,8 +340,6 @@ else()
     ${DEP_DIR}/lib/libcurl.a
     ${DEP_DIR}/lib/libssl.a
     ${DEP_DIR}/lib/libcrypto.a
-    ${_LIB_PATH_EXTRA}/libs2.a
-    ${OBLIB_ABSEIL_LIST}
     ${DEP_DIR}/lib/libroaring.a
     $<$<STREQUAL:"${ARCHITECTURE}","x86_64">:${DEP_DIR}/lib/libunwind.a>
     ${DEP_DIR}/lib/sqlite/libsqlite3.a
@@ -354,7 +348,6 @@ else()
     $<$<PLATFORM_ID:iOS>:${DEP_DIR}/lib/libicudata.a>
     $<$<NOT:$<PLATFORM_ID:iOS>>:${DEP_DIR}/lib/libicustubdata.a>
     ${DEP_DIR}/lib/libicuuc.a
-    ${DEP_DIR}/lib/libprotobuf-c.a
     $<$<PLATFORM_ID:Linux>:-L${DEP_DIR}/var/usr/lib64 -L${DEP_DIR}/var/usr/lib -L${DEP_3RD_DIR}/usr/lib -L${DEP_3RD_DIR}/usr/lib64>
     ${LIBAIO_LINK_OPTION} $<$<NOT:$<BOOL:${ANDROID}>>:-lpthread> -ldl
     $<$<BOOL:${ANDROID}>:-llog>

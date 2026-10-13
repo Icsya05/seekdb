@@ -12,8 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# Build the Rust crates with Cargo and expose their static libraries to C++ as
-# the INTERFACE targets `sql_nio` and `config`.
+# Build one Rust host archive containing config, sql-nio and optional plugin
+# runtime. sql_nio and config expose compatible C++ interface targets.
 #
 # Usage from any C++ target:
 #     target_link_libraries(<your_target> PRIVATE sql_nio)
@@ -72,14 +72,11 @@ endif()
 # Keep all cargo output inside the CMake build tree (isolated per build dir).
 set(RUST_TARGET_DIR "${CMAKE_BINARY_DIR}/rust-target" CACHE PATH
     "Cargo output directory; may reuse a previously built target directory")
-# Cargo's staticlib artifact name is platform-specific: libsql_nio.a on
-# Unix/MSYS, sql_nio.lib with the MSVC toolchain.
+# Cargo's aggregate staticlib artifact name is platform-specific.
 if(WIN32)
-  set(SQL_NIO_STATICLIB "${RUST_TARGET_DIR}/${_cargo_out_subdir}/sql_nio.lib")
-  set(CONFIG_STATICLIB "${RUST_TARGET_DIR}/${_cargo_out_subdir}/config.lib")
+  set(RUST_STATICLIB "${RUST_TARGET_DIR}/${_cargo_out_subdir}/seekdb_host.lib")
 else()
-  set(SQL_NIO_STATICLIB "${RUST_TARGET_DIR}/${_cargo_target_subdir}${_cargo_out_subdir}/libsql_nio.a")
-  set(CONFIG_STATICLIB "${RUST_TARGET_DIR}/${_cargo_target_subdir}${_cargo_out_subdir}/libconfig.a")
+  set(RUST_STATICLIB "${RUST_TARGET_DIR}/${_cargo_target_subdir}${_cargo_out_subdir}/libseekdb_host.a")
 endif()
 
 # Reinvoke Cargo when any workspace crate's source or build input changes.
@@ -101,6 +98,15 @@ foreach(_rust_manifest IN LISTS _rust_crate_manifests)
     "${_rust_crate_dir}/*.json")
   list(APPEND _rust_inputs ${_rust_crate_sources} ${_rust_crate_build_inputs})
 endforeach()
+
+set(_rust_host_features)
+if(SEEKDB_ENABLE_EXPERIMENTAL_PLUGINS)
+  list(APPEND _rust_host_features --features plugins)
+endif()
+# Make generators must also rerun Cargo when only the feature option changes.
+file(GENERATE OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/seekdb-rust-host-features.txt"
+  CONTENT "${_rust_host_features}\n")
+list(APPEND _rust_inputs "${CMAKE_CURRENT_BINARY_DIR}/seekdb-rust-host-features.txt")
 
 # CC/AR: cargo inherits CMake's PATH but not its compiler variables, and
 # `ring` (rustls's crypto backend) compiles C through the `cc` crate. Pin it
@@ -179,22 +185,25 @@ if(CMAKE_VERSION VERSION_GREATER_EQUAL "3.28")
 endif()
 
 add_custom_command(
-  OUTPUT "${SQL_NIO_STATICLIB}"
-  BYPRODUCTS "${CONFIG_STATICLIB}"
+  OUTPUT "${RUST_STATICLIB}"
+  BYPRODUCTS
              "${RUST_TARGET_DIR}/include/config_bridge.h"
              "${RUST_TARGET_DIR}/include/config_checkers.h"
   COMMAND "${CMAKE_COMMAND}" -E env ${_rust_build_env}
           "${CARGO}" build ${_cargo_profile_flag} ${_cargo_target_args}
           --manifest-path "${RUST_WORKSPACE_DIR}/Cargo.toml"
-          --package sql-nio --package config
-  COMMAND "${CMAKE_COMMAND}" -E touch "${SQL_NIO_STATICLIB}"
+          --package seekdb-host ${_rust_host_features}
+  COMMAND "${CMAKE_COMMAND}" -E touch "${RUST_STATICLIB}"
   WORKING_DIRECTORY "${RUST_WORKSPACE_DIR}"
   DEPENDS ${_rust_inputs}
-  COMMENT "[rust] cargo build sql-nio and config (${_cargo_out_subdir})"
+  COMMENT "[rust] cargo build seekdb-host (${_cargo_out_subdir})"
   ${_rust_job_server_options}
   VERBATIM)
 
-add_custom_target(rust_staticlibs_build DEPENDS "${SQL_NIO_STATICLIB}")
+add_custom_target(seekdb_rust_host_build DEPENDS "${RUST_STATICLIB}")
+add_custom_target(sql_nio_build DEPENDS seekdb_rust_host_build)
+
+add_custom_target(rust_staticlibs_build DEPENDS seekdb_rust_host_build)
 
 # System libraries the Rust std staticlib depends on.
 if(WIN32)
@@ -210,19 +219,22 @@ else()
   endif()
 endif()
 
+add_library(seekdb_rust_host INTERFACE)
+add_dependencies(seekdb_rust_host seekdb_rust_host_build)
+target_include_directories(seekdb_rust_host INTERFACE
+  "${RUST_WORKSPACE_DIR}/plugin-runtime/include")
+target_link_libraries(seekdb_rust_host INTERFACE "${RUST_STATICLIB}" ${_rust_syslibs})
+
 add_library(sql_nio INTERFACE)
-add_dependencies(sql_nio rust_staticlibs_build)
 target_include_directories(sql_nio INTERFACE "${SQL_NIO_INCLUDE_DIR}")
-target_link_libraries(sql_nio INTERFACE "${SQL_NIO_STATICLIB}" ${_rust_syslibs})
+target_link_libraries(sql_nio INTERFACE seekdb_rust_host)
 
 add_library(config INTERFACE)
-add_dependencies(config rust_staticlibs_build)
 target_include_directories(config INTERFACE
   "${CONFIG_INCLUDE_DIR}" "${RUST_TARGET_DIR}/include")
-target_link_libraries(config INTERFACE "${CONFIG_STATICLIB}" ${_rust_syslibs})
+target_link_libraries(config INTERFACE seekdb_rust_host)
 
 set_property(DIRECTORY APPEND PROPERTY
   ADDITIONAL_CLEAN_FILES "${RUST_TARGET_DIR}")
 
-message(STATUS "[rust] sql_nio target ready -> ${SQL_NIO_STATICLIB}")
-message(STATUS "[rust] config target ready -> ${CONFIG_STATICLIB}")
+message(STATUS "[rust] seekdb Rust host ready -> ${RUST_STATICLIB}")

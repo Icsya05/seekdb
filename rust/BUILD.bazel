@@ -41,15 +41,14 @@ _RUST_INPUTS = glob(
 genrule(
     name = "_rust_static_unix",
     srcs = _RUST_INPUTS,
-    outs = ["libsql_nio.a", "libconfig.a", "unix/config_bridge.h", "unix/config_checkers.h"],
+    outs = ["libseekdb_host.a", "unix/config_bridge.h", "unix/config_checkers.h"],
     cmd = """
 set -eu
 export CARGO_TARGET_DIR="$(@D)/rust-cargo-target"
 export CONFIG_HEADER_DIR="$$PWD/$(@D)/unix"
 export DEFAULT_LOG_LEVEL=OB_LOG_LEVEL_ERROR
-cargo build --release --manifest-path "$(location Cargo.toml)" --package sql-nio --package config
-cp "$$CARGO_TARGET_DIR/release/libsql_nio.a" "$(@D)/libsql_nio.a"
-cp "$$CARGO_TARGET_DIR/release/libconfig.a" "$(@D)/libconfig.a"
+cargo build --release --manifest-path "$(location Cargo.toml)" --package seekdb-host --features plugins
+cp "$$CARGO_TARGET_DIR/release/libseekdb_host.a" "$(@D)/libseekdb_host.a"
 """,
     tags = [
         "no-remote",
@@ -64,14 +63,13 @@ cp "$$CARGO_TARGET_DIR/release/libconfig.a" "$(@D)/libconfig.a"
 genrule(
     name = "_rust_static_windows",
     srcs = _RUST_INPUTS,
-    outs = ["sql_nio.lib", "config.lib", "windows/config_bridge.h", "windows/config_checkers.h"],
+    outs = ["seekdb_host.lib", "windows/config_bridge.h", "windows/config_checkers.h"],
     cmd_bat = """
 set CARGO_TARGET_DIR=$(@D)\\rust-cargo-target
 set CONFIG_HEADER_DIR=%CD%\\$(@D)\\windows
 set DEFAULT_LOG_LEVEL=OB_LOG_LEVEL_ERROR
-cargo build --release --manifest-path "$(location Cargo.toml)" --package sql-nio --package config
-copy /Y "%CARGO_TARGET_DIR%\\release\\sql_nio.lib" "$(@D)\\sql_nio.lib"
-copy /Y "%CARGO_TARGET_DIR%\\release\\config.lib" "$(@D)\\config.lib"
+cargo build --release --manifest-path "$(location Cargo.toml)" --package seekdb-host --features plugins
+copy /Y "%CARGO_TARGET_DIR%\\release\\seekdb_host.lib" "$(@D)\\seekdb_host.lib"
 """,
     tags = [
         "no-remote",
@@ -86,8 +84,8 @@ copy /Y "%CARGO_TARGET_DIR%\\release\\config.lib" "$(@D)\\config.lib"
 filegroup(
     name = "sql_nio_archive",
     srcs = select({
-        ":windows": ["sql_nio.lib"],
-        "//conditions:default": ["libsql_nio.a"],
+        ":windows": ["seekdb_host.lib"],
+        "//conditions:default": ["libseekdb_host.a"],
     }),
     visibility = ["//src/observer:__pkg__"],
 )
@@ -95,8 +93,8 @@ filegroup(
 filegroup(
     name = "config_archive",
     srcs = select({
-        ":windows": ["config.lib"],
-        "//conditions:default": ["libconfig.a"],
+        ":windows": ["seekdb_host.lib"],
+        "//conditions:default": ["libseekdb_host.a"],
     }),
     visibility = ["//src/observer:__pkg__"],
 )
