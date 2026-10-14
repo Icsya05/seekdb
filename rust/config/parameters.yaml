@@ -90,6 +90,13 @@
   edit_level: DYNAMIC_EFFECTIVE
   description: "port mode for mysql connection: specified, random, or disabled"
 
+- name: local_ip
+  type: STR
+  default: "127.0.0.1"
+  section: OBSERVER
+  edit_level: STATIC_EFFECTIVE
+  description: "deprecated compatibility parameter accepted for deployment tooling; SeekDB always uses the loopback self address"
+
 - name: internal_sql_execute_timeout
   type: TIME
   default: "30s"
@@ -131,6 +138,15 @@
   edit_level: DYNAMIC_EFFECTIVE
   description: "deprecated compatibility parameter. The configured value is accepted and persisted, but is ignored by memory sizing and memory control. Range: 0, [1G,)."
   checker: "common::MemoryBudgetConfigChecker"
+
+- name: __min_full_resource_pool_memory
+  accessor: legacy_min_full_resource_pool_memory
+  type: INT
+  default: "2147483648"
+  range: "[1073741824,)"
+  section: OBSERVER
+  edit_level: DYNAMIC_EFFECTIVE
+  description: "deprecated compatibility parameter; accepted and persisted for deployment tooling, but has no effect"
 
 - name: kvcache_memory_limit
   type: CAP_WITH_CHECKER
@@ -523,12 +539,11 @@
   description: "the row number processed by vectorized sql engine within one batch. Range: [0, 65535]"
 
 - name: _ctx_memory_limit
-  type: STR_WITH_CHECKER
+  type: STR
   default: ""
   section: RUNTIME
   edit_level: DYNAMIC_EFFECTIVE
-  description: "specifies server runtime context memory limits."
-  checker: "common::ObCtxMemoryLimitChecker"
+  description: "deprecated compatibility parameter; no effect"
 
 - name: _enable_convert_real_to_decimal
   type: BOOL

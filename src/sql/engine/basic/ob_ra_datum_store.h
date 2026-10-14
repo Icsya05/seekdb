@@ -428,7 +428,11 @@ private:
   int find_block_idx(Reader &reader, const int64_t row_id, BlockIndex *&bi);
   int get_store_row(Reader &reader, const int64_t row_id, const StoredRow *&sr);
   int ensure_reader_buffer(Reader &reader, ShrinkBuffer &buf, const int64_t size);
-  int write_file(BlockIndex &bi, void *buf, int64_t size);
+
+protected:
+  virtual int write_file(BlockIndex &bi, void *buf, int64_t size);
+
+private:
   int read_file(void *buf, const int64_t size, const int64_t offset);
   inline bool has_index_block() const { return nullptr != idx_blk_; }
 private:
@@ -447,8 +451,10 @@ private:
   common::ObDList<LinkNode> blk_mem_list_;
   common::ObSEArray<BlockIndex, DEFAULT_BLOCK_CNT> blocks_;
   int64_t mem_hold_; // total mem allocated, including mem allocated in blocks but not yet used
-  common::DefaultPageAllocator inner_allocator_;
+  common::DefaultPageAllocator inner_backing_allocator_;
+  common::TrackedAllocator inner_allocator_;
   common::ObIAllocator *allocator_;
+  bool use_inner_allocator_;
   uint32_t row_extend_size_;
   ObSqlMemoryCallback *mem_stat_;
   ObIOEventObserver *io_observer_;

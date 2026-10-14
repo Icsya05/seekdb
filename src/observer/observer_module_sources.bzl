@@ -51,7 +51,6 @@ def observer_validate_source_inventory(
             if package_path in owned:
                 fail("duplicate Observer standalone source: %s" % source.path)
             owned[package_path] = "standalone"
-
     ignored = {path: True for path in ignored_sources}
     for path in ignored:
         if path in owned:
