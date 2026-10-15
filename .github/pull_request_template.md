@@ -1,3 +1,15 @@
+## 参赛队内提交说明
+
+目标分支：`2026-competition`。遵守 [团队协作说明](https://github.com/Icsya05/seekdb/blob/2026-competition/TEAM_WORKFLOW.md)。
+
+- 目的：
+- 主要修改：
+- 实际验证及结果（未运行时如实填写）：
+
+确认未包含密码、令牌、个人数据库数据或构建产物。下方保留官方模板及原有要求。
+
+---
+
 <!--
 Thank you for contributing to **OceanBase SeekDB**!
 

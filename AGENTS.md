@@ -18,3 +18,9 @@
 
 - Prefer adding regression and correctness coverage to the repository's established test suites and test directories.
 - Avoid adding test-only or benchmark-only files under `tools/` unless the task specifically requires a reusable developer tool.
+
+## Competition Team Workflow
+
+- For work in this team's competition repository, read and follow [TEAM_WORKFLOW.md](TEAM_WORKFLOW.md).
+- Target team pull requests at `2026-competition`; keep the existing project-specific development and testing guidance.
+- GitHub private-repository rulesets are currently not enforced by the account plan; do not claim that server-side protection is active.
