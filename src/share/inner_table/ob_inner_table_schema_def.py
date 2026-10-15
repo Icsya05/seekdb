@@ -6407,7 +6407,7 @@ def_table_schema(
 
 def_table_schema(
   owner = 'graph',
-  table_name = '__ALL_VIRTUAL_PG_GRAPHS',
+  table_name = '__ALL_VIRTUAL_PROPERTY_GRAPHS',
   table_id = '12565',
   table_type = 'VIRTUAL_TABLE',
   gm_columns = [],
@@ -6421,7 +6421,7 @@ def_table_schema(
 
 def_table_schema(
   owner = 'graph',
-  table_name = '__ALL_VIRTUAL_PG_ELEMENTS',
+  table_name = '__ALL_VIRTUAL_PROPERTY_GRAPH_ELEMENTS',
   table_id = '12566',
   table_type = 'VIRTUAL_TABLE',
   gm_columns = [],
@@ -6439,7 +6439,7 @@ def_table_schema(
 
 def_table_schema(
   owner = 'graph',
-  table_name = '__ALL_VIRTUAL_PG_KEYS',
+  table_name = '__ALL_VIRTUAL_PROPERTY_GRAPH_KEYS',
   table_id = '12567',
   table_type = 'VIRTUAL_TABLE',
   gm_columns = [],
@@ -6455,7 +6455,7 @@ def_table_schema(
 
 def_table_schema(
   owner = 'graph',
-  table_name = '__ALL_VIRTUAL_PG_EDGE_RELATIONSHIPS',
+  table_name = '__ALL_VIRTUAL_PROPERTY_GRAPH_EDGE_RELATIONSHIPS',
   table_id = '12568',
   table_type = 'VIRTUAL_TABLE',
   gm_columns = [],
@@ -6474,7 +6474,7 @@ def_table_schema(
 
 def_table_schema(
   owner = 'graph',
-  table_name = '__ALL_VIRTUAL_PG_LABELS',
+  table_name = '__ALL_VIRTUAL_PROPERTY_GRAPH_LABELS',
   table_id = '12569',
   table_type = 'VIRTUAL_TABLE',
   gm_columns = [],
@@ -6488,7 +6488,7 @@ def_table_schema(
 
 def_table_schema(
   owner = 'graph',
-  table_name = '__ALL_VIRTUAL_PG_ELEMENT_LABELS',
+  table_name = '__ALL_VIRTUAL_PROPERTY_GRAPH_ELEMENT_LABELS',
   table_id = '12570',
   table_type = 'VIRTUAL_TABLE',
   gm_columns = [],
@@ -6503,7 +6503,7 @@ def_table_schema(
 
 def_table_schema(
   owner = 'graph',
-  table_name = '__ALL_VIRTUAL_PG_LABEL_PROPERTIES',
+  table_name = '__ALL_VIRTUAL_PROPERTY_GRAPH_LABEL_PROPERTIES',
   table_id = '12571',
   table_type = 'VIRTUAL_TABLE',
   gm_columns = [],
@@ -6528,7 +6528,7 @@ def_table_schema(
 
 def_table_schema(
   owner = 'graph',
-  table_name = '__ALL_VIRTUAL_PG_PROPERTY_DEFINITIONS',
+  table_name = '__ALL_VIRTUAL_PROPERTY_GRAPH_PROPERTY_DEFINITIONS',
   table_id = '12572',
   table_type = 'VIRTUAL_TABLE',
   gm_columns = [],
@@ -14036,7 +14036,7 @@ def_table_schema(
   gm_columns = [],
   rowkey_columns = [],
   normal_columns = [],
-  view_definition = 'SELECT GRAPH_SCHEMA, GRAPH_NAME FROM oceanbase.__ALL_VIRTUAL_PG_GRAPHS'
+  view_definition = 'SELECT GRAPH_SCHEMA, GRAPH_NAME FROM oceanbase.__ALL_VIRTUAL_PROPERTY_GRAPHS'
 )
 
 def_table_schema(
@@ -14048,7 +14048,7 @@ def_table_schema(
   gm_columns = [],
   rowkey_columns = [],
   normal_columns = [],
-  view_definition = 'SELECT GRAPH_SCHEMA, GRAPH_NAME, ELEMENT_NAME, ELEMENT_KIND, OBJECT_SCHEMA, OBJECT_NAME, OBJECT_TYPE FROM oceanbase.__ALL_VIRTUAL_PG_ELEMENTS'
+  view_definition = 'SELECT GRAPH_SCHEMA, GRAPH_NAME, ELEMENT_NAME, ELEMENT_KIND, OBJECT_SCHEMA, OBJECT_NAME, OBJECT_TYPE FROM oceanbase.__ALL_VIRTUAL_PROPERTY_GRAPH_ELEMENTS'
 )
 
 def_table_schema(
@@ -14060,7 +14060,7 @@ def_table_schema(
   gm_columns = [],
   rowkey_columns = [],
   normal_columns = [],
-  view_definition = 'SELECT GRAPH_SCHEMA, GRAPH_NAME, ELEMENT_NAME, ORDINAL_POSITION, COLUMN_NAME FROM oceanbase.__ALL_VIRTUAL_PG_KEYS'
+  view_definition = 'SELECT GRAPH_SCHEMA, GRAPH_NAME, ELEMENT_NAME, ORDINAL_POSITION, COLUMN_NAME FROM oceanbase.__ALL_VIRTUAL_PROPERTY_GRAPH_KEYS'
 )
 
 def_table_schema(
@@ -14072,7 +14072,7 @@ def_table_schema(
   gm_columns = [],
   rowkey_columns = [],
   normal_columns = [],
-  view_definition = 'SELECT GRAPH_SCHEMA, GRAPH_NAME, EDGE_ELEMENT_NAME, ENDPOINT_TYPE, VERTEX_ELEMENT_NAME, ORDINAL_POSITION, EDGE_COLUMN_NAME, VERTEX_COLUMN_NAME FROM oceanbase.__ALL_VIRTUAL_PG_EDGE_RELATIONSHIPS'
+  view_definition = 'SELECT GRAPH_SCHEMA, GRAPH_NAME, EDGE_ELEMENT_NAME, ENDPOINT_TYPE, VERTEX_ELEMENT_NAME, ORDINAL_POSITION, EDGE_COLUMN_NAME, VERTEX_COLUMN_NAME FROM oceanbase.__ALL_VIRTUAL_PROPERTY_GRAPH_EDGE_RELATIONSHIPS'
 )
 
 def_table_schema(
@@ -14084,7 +14084,7 @@ def_table_schema(
   gm_columns = [],
   rowkey_columns = [],
   normal_columns = [],
-  view_definition = 'SELECT GRAPH_SCHEMA, GRAPH_NAME, LABEL_NAME FROM oceanbase.__ALL_VIRTUAL_PG_LABELS'
+  view_definition = 'SELECT GRAPH_SCHEMA, GRAPH_NAME, LABEL_NAME FROM oceanbase.__ALL_VIRTUAL_PROPERTY_GRAPH_LABELS'
 )
 
 def_table_schema(
@@ -14096,7 +14096,7 @@ def_table_schema(
   gm_columns = [],
   rowkey_columns = [],
   normal_columns = [],
-  view_definition = 'SELECT GRAPH_SCHEMA, GRAPH_NAME, ELEMENT_NAME, LABEL_NAME FROM oceanbase.__ALL_VIRTUAL_PG_ELEMENT_LABELS'
+  view_definition = 'SELECT GRAPH_SCHEMA, GRAPH_NAME, ELEMENT_NAME, LABEL_NAME FROM oceanbase.__ALL_VIRTUAL_PROPERTY_GRAPH_ELEMENT_LABELS'
 )
 
 def_table_schema(
@@ -14108,7 +14108,7 @@ def_table_schema(
   gm_columns = [],
   rowkey_columns = [],
   normal_columns = [],
-  view_definition = 'SELECT GRAPH_SCHEMA, GRAPH_NAME, LABEL_NAME, PROPERTY_NAME, ORDINAL_POSITION, DATA_TYPE, COLUMN_TYPE, CHARACTER_MAXIMUM_LENGTH, CHARACTER_OCTET_LENGTH, NUMERIC_PRECISION, NUMERIC_SCALE, DATETIME_PRECISION, CHARACTER_SET_NAME, COLLATION_NAME FROM oceanbase.__ALL_VIRTUAL_PG_LABEL_PROPERTIES'
+  view_definition = 'SELECT GRAPH_SCHEMA, GRAPH_NAME, LABEL_NAME, PROPERTY_NAME, ORDINAL_POSITION, DATA_TYPE, COLUMN_TYPE, CHARACTER_MAXIMUM_LENGTH, CHARACTER_OCTET_LENGTH, NUMERIC_PRECISION, NUMERIC_SCALE, DATETIME_PRECISION, CHARACTER_SET_NAME, COLLATION_NAME FROM oceanbase.__ALL_VIRTUAL_PROPERTY_GRAPH_LABEL_PROPERTIES'
 )
 
 def_table_schema(
@@ -14120,7 +14120,7 @@ def_table_schema(
   gm_columns = [],
   rowkey_columns = [],
   normal_columns = [],
-  view_definition = 'SELECT GRAPH_SCHEMA, GRAPH_NAME, ELEMENT_NAME, PROPERTY_NAME, COLUMN_NAME, VALUE_EXPRESSION, DATA_TYPE, COLUMN_TYPE, IS_NULLABLE FROM oceanbase.__ALL_VIRTUAL_PG_PROPERTY_DEFINITIONS'
+  view_definition = 'SELECT GRAPH_SCHEMA, GRAPH_NAME, ELEMENT_NAME, PROPERTY_NAME, COLUMN_NAME, VALUE_EXPRESSION, DATA_TYPE, COLUMN_TYPE, IS_NULLABLE FROM oceanbase.__ALL_VIRTUAL_PROPERTY_GRAPH_PROPERTY_DEFINITIONS'
 )
 
 # Reserved position (placeholder before this line)
