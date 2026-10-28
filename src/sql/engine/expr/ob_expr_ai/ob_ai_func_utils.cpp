@@ -1631,6 +1631,8 @@ int render_ai_prompt_object(ObIAllocator &allocator, ObJsonObject *prompt_object
       } else {
         ObJsonBuffer json_buf(&allocator);
         if (OB_FAIL(node->print(json_buf, 0))) {
+        } else if (json_buf.capacity() > INT32_MAX) {
+          ret = OB_SIZE_OVERFLOW;
         } else {
           ret = json_buf.get_result_string(value);
         }
@@ -1678,6 +1680,9 @@ int render_ai_prompt_object(ObIAllocator &allocator, ObJsonObject *prompt_object
       if (result_buf.length() + literal_len > INT32_MAX) {
         ret = OB_SIZE_OVERFLOW;
       } else if (OB_FAIL(result_buf.append(text + literal_start, literal_len))) {
+      } else if (result_buf.capacity() > INT32_MAX) {
+        // get_result_string narrows the backing capacity to ObString's int32.
+        ret = OB_SIZE_OVERFLOW;
       } else {
         // Transfer ownership: a local buffer must not free the returned text.
         ret = result_buf.get_result_string(result);

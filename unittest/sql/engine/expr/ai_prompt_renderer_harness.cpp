@@ -59,15 +59,23 @@ static ObString own_string(ObIAllocator &allocator, const std::string &text) {
   result.assign_ptr(buffer, text.size());
   return result;
 }
+static int buffer_creation_count = 0;
+static int oversize_buffer_number = -1;
 class ObStringBuffer {
 public:
-  explicit ObStringBuffer(ObIAllocator *allocator) : allocator_(allocator) {}
+  explicit ObStringBuffer(ObIAllocator *allocator)
+      : allocator_(allocator), buffer_number_(++buffer_creation_count) {}
   int append(const char *text, uint64_t length) { if (length) text_.append(text, length); return 0; }
   int append(const ObString &value) { return append(value.ptr(), value.length()); }
   uint64_t length() const { return text_.size(); }
+  uint64_t capacity() const {
+    return buffer_number_ == oversize_buffer_number
+        ? static_cast<uint64_t>(INT32_MAX) + 1 : text_.capacity();
+  }
   int get_result_string(ObString &result) { result = own_string(*allocator_, text_); return 0; }
 private:
   ObIAllocator *allocator_;
+  int buffer_number_;
   std::string text_;
 };
 using ObJsonBuffer = ObStringBuffer;
@@ -202,6 +210,15 @@ int main(int argc, char **argv) {
     } else if (test == "no_arguments") {
       ObJsonString text("plain text"); ObJsonArray args; auto prompt = envelope(text, args);
       require(render(allocator, prompt) == "plain text", "template without arguments changed");
+    } else if (test == "capacity_overflow" || test == "json_capacity_overflow") {
+      // Model a grown backing buffer without allocating 2 GiB in the harness.
+      // The output buffer is constructed first; a structured argument's buffer second.
+      oversize_buffer_number = test == "capacity_overflow" ? 1 : 2;
+      ObJsonString text("{0}"), value("x"); ObJsonArray args, list; list.append(&value);
+      args.append(test == "capacity_overflow" ? static_cast<ObJsonNode *>(&value) : &list);
+      auto prompt = envelope(text, args); ObString result;
+      require(ObAIFuncPromptObjectUtils::replace_all_str_args_in_template(allocator, &prompt, result) == OB_SIZE_OVERFLOW,
+              "backing capacity exceeding int32 was accepted");
     } else if (test == "malformed") {
       ObJsonArray bad_text, args; ObJsonString value("x"); args.append(&value);
       ObJsonObject prompt; prompt.add("template", &bad_text); prompt.add("args", &args); ObString result;

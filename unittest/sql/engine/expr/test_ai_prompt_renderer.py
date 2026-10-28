@@ -71,6 +71,12 @@ class PromptRendererComponentTest(unittest.TestCase):
     def test_template_without_arguments(self):
         self.run_case("no_arguments")
 
+    def test_backing_capacity_overflow(self):
+        self.run_case("capacity_overflow")
+
+    def test_json_backing_capacity_overflow(self):
+        self.run_case("json_capacity_overflow")
+
 
 if __name__ == "__main__":
     unittest.main()
