@@ -1,0 +1,224 @@
+{
+  "single-decode-ascii-repeat-results.json": [
+    {
+      "optimization": "O2",
+      "corpus": "ascii",
+      "before_median_ms": 51.91765,
+      "after_median_ms": 38.75095,
+      "reduction_percent": 25.36073955581579,
+      "samples": 6,
+      "checksum": "6966355026031026967"
+    },
+    {
+      "optimization": "O2",
+      "corpus": "chinese",
+      "before_median_ms": 181.2045,
+      "after_median_ms": 123.906,
+      "reduction_percent": 31.620903454384408,
+      "samples": 6,
+      "checksum": "9483930704274442024"
+    },
+    {
+      "optimization": "O2",
+      "corpus": "mixed",
+      "before_median_ms": 155.6155,
+      "after_median_ms": 109.56,
+      "reduction_percent": 29.59570222760586,
+      "samples": 6,
+      "checksum": "10134958228785846661"
+    },
+    {
+      "optimization": "O2",
+      "corpus": "punctuation",
+      "before_median_ms": 153.7165,
+      "after_median_ms": 88.60565,
+      "reduction_percent": 42.357749493385555,
+      "samples": 6,
+      "checksum": "13353175520344308961"
+    },
+    {
+      "optimization": "O3",
+      "corpus": "ascii",
+      "before_median_ms": 47.07085,
+      "after_median_ms": 37.61045,
+      "reduction_percent": 20.098213650273998,
+      "samples": 6,
+      "checksum": "6966355026031026967"
+    },
+    {
+      "optimization": "O3",
+      "corpus": "chinese",
+      "before_median_ms": 165.2545,
+      "after_median_ms": 108.42750000000001,
+      "reduction_percent": 34.38756584540814,
+      "samples": 6,
+      "checksum": "9483930704274442024"
+    },
+    {
+      "optimization": "O3",
+      "corpus": "mixed",
+      "before_median_ms": 147.31,
+      "after_median_ms": 98.7553,
+      "reduction_percent": 32.960898784875425,
+      "samples": 6,
+      "checksum": "10134958228785846661"
+    },
+    {
+      "optimization": "O3",
+      "corpus": "punctuation",
+      "before_median_ms": 121.90549999999999,
+      "after_median_ms": 77.465,
+      "reduction_percent": 36.454876933362314,
+      "samples": 6,
+      "checksum": "13353175520344308961"
+    }
+  ],
+  "single-decode-ascii-results.json": [
+    {
+      "optimization": "O2",
+      "corpus": "ascii",
+      "before_median_ms": 43.536199999999994,
+      "after_median_ms": 33.583299999999994,
+      "reduction_percent": 22.86120515800645,
+      "samples": 6,
+      "checksum": "6966355026031026967"
+    },
+    {
+      "optimization": "O2",
+      "corpus": "chinese",
+      "before_median_ms": 179.54149999999998,
+      "after_median_ms": 126.5085,
+      "reduction_percent": 29.538017672794304,
+      "samples": 6,
+      "checksum": "9483930704274442024"
+    },
+    {
+      "optimization": "O2",
+      "corpus": "mixed",
+      "before_median_ms": 154.6155,
+      "after_median_ms": 110.0885,
+      "reduction_percent": 28.798535722485784,
+      "samples": 6,
+      "checksum": "10134958228785846661"
+    },
+    {
+      "optimization": "O2",
+      "corpus": "punctuation",
+      "before_median_ms": 162.298,
+      "after_median_ms": 96.68495,
+      "reduction_percent": 40.427516050721515,
+      "samples": 6,
+      "checksum": "13353175520344308961"
+    },
+    {
+      "optimization": "O3",
+      "corpus": "ascii",
+      "before_median_ms": 47.855199999999996,
+      "after_median_ms": 39.71385,
+      "reduction_percent": 17.01246677477055,
+      "samples": 6,
+      "checksum": "6966355026031026967"
+    },
+    {
+      "optimization": "O3",
+      "corpus": "chinese",
+      "before_median_ms": 180.69,
+      "after_median_ms": 114.9185,
+      "reduction_percent": 36.40018816757984,
+      "samples": 6,
+      "checksum": "9483930704274442024"
+    },
+    {
+      "optimization": "O3",
+      "corpus": "mixed",
+      "before_median_ms": 159.041,
+      "after_median_ms": 107.0535,
+      "reduction_percent": 32.68811187052395,
+      "samples": 6,
+      "checksum": "10134958228785846661"
+    },
+    {
+      "optimization": "O3",
+      "corpus": "punctuation",
+      "before_median_ms": 136.488,
+      "after_median_ms": 85.08785,
+      "reduction_percent": 37.65909823574234,
+      "samples": 6,
+      "checksum": "13353175520344308961"
+    }
+  ],
+  "single-decode-no-ascii-results.json": [
+    {
+      "optimization": "O2",
+      "corpus": "ascii",
+      "before_median_ms": 43.909800000000004,
+      "after_median_ms": 53.15815,
+      "reduction_percent": -21.062154689841428,
+      "samples": 6,
+      "checksum": "6966355026031026967"
+    },
+    {
+      "optimization": "O2",
+      "corpus": "chinese",
+      "before_median_ms": 160.3345,
+      "after_median_ms": 105.15299999999999,
+      "reduction_percent": 34.41648553492854,
+      "samples": 6,
+      "checksum": "9483930704274442024"
+    },
+    {
+      "optimization": "O2",
+      "corpus": "mixed",
+      "before_median_ms": 146.2025,
+      "after_median_ms": 96.62440000000001,
+      "reduction_percent": 33.910569244711944,
+      "samples": 6,
+      "checksum": "10134958228785846661"
+    },
+    {
+      "optimization": "O2",
+      "corpus": "punctuation",
+      "before_median_ms": 164.937,
+      "after_median_ms": 162.136,
+      "reduction_percent": 1.698224170440843,
+      "samples": 6,
+      "checksum": "13353175520344308961"
+    },
+    {
+      "optimization": "O3",
+      "corpus": "ascii",
+      "before_median_ms": 48.71235,
+      "after_median_ms": 46.78075,
+      "reduction_percent": 3.965318856511757,
+      "samples": 6,
+      "checksum": "6966355026031026967"
+    },
+    {
+      "optimization": "O3",
+      "corpus": "chinese",
+      "before_median_ms": 182.187,
+      "after_median_ms": 110.786,
+      "reduction_percent": 39.19105095314156,
+      "samples": 6,
+      "checksum": "9483930704274442024"
+    },
+    {
+      "optimization": "O3",
+      "corpus": "mixed",
+      "before_median_ms": 159.74,
+      "after_median_ms": 104.969,
+      "reduction_percent": 34.287592337548524,
+      "samples": 6,
+      "checksum": "10134958228785846661"
+    },
+    {
+      "optimization": "O3",
+      "corpus": "punctuation",
+      "before_median_ms": 122.5695,
+      "after_median_ms": 105.93299999999999,
+      "reduction_percent": 13.573115660910762,
+      "samples": 6,
+      "checksum": "13353175520344308961"
+    }
+  ]
+}
