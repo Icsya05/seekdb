@@ -18,6 +18,7 @@
 #include "ob_ai_func_utils.h"
 #include "ob_ai_func_client.h"
 #include "query/engine/expr/ob_ai_model_resolver.h"
+#include <cmath>
 
 namespace oceanbase 
 {
@@ -216,11 +217,33 @@ int ObOpenAIUtils::ObOpenAIEmbed::get_body(common::ObIAllocator &allocator,
   return ret;
 }
 
+// Embedding response validation.
+static bool is_valid_dense_embedding_vector(const ObJsonNode *node)
+{
+  bool valid = node != nullptr && node->json_type() == ObJsonNodeType::J_ARRAY;
+  if (valid) {
+    const ObJsonArray *vector = static_cast<const ObJsonArray *>(node);
+    valid = vector->element_count() > 0;
+    for (uint64_t i = 0; valid && i < vector->element_count(); ++i) {
+      const ObJsonNode *value = vector->get_value(i);
+      double number = 0;
+      valid = value != nullptr &&
+          (value->json_type() == ObJsonNodeType::J_INT ||
+           value->json_type() == ObJsonNodeType::J_UINT ||
+           value->json_type() == ObJsonNodeType::J_DOUBLE ||
+           value->json_type() == ObJsonNodeType::J_DECIMAL) &&
+          value->to_double(number) == OB_SUCCESS && std::isfinite(number);
+    }
+  }
+  return valid;
+}
+
 int ObOpenAIUtils::ObOpenAIEmbed::parse_output(common::ObIAllocator &allocator, 
                                                common::ObJsonObject *http_response,
                                                common::ObIJsonBase *&result) 
 {
   int ret = OB_SUCCESS;
+  result = nullptr;
   if (OB_ISNULL(http_response)) {
     ret = OB_INVALID_ARGUMENT;
   } else {
@@ -233,6 +256,20 @@ int ObOpenAIUtils::ObOpenAIEmbed::parse_output(common::ObIAllocator &allocator,
       ret = OB_INVALID_DATA;
     } else {
       ObJsonArray *data_array = static_cast<ObJsonArray *>(data_node);
+      const int64_t count = data_array->element_count();
+      ObArray<ObJsonNode *> ordered;
+      bool indexed = false;
+      if (count == 0) {
+        ret = OB_INVALID_DATA;
+      } else {
+        ObJsonNode *first = data_array->get_value(0);
+        if (first != nullptr && first->json_type() == ObJsonNodeType::J_OBJECT) {
+          indexed = static_cast<ObJsonObject *>(first)->get_value("index") != nullptr;
+        }
+      }
+      for (int64_t i = 0; OB_SUCC(ret) && i < count; ++i) {
+        ret = ordered.push_back(nullptr);
+      }
       ObJsonNode *embedding_node = nullptr;
       for (int64_t i = 0; OB_SUCC(ret) && i < data_array->element_count(); i++) {
         if (OB_ISNULL(embedding_node = data_array->get_value(i))) {
@@ -242,11 +279,32 @@ int ObOpenAIUtils::ObOpenAIEmbed::parse_output(common::ObIAllocator &allocator,
         } else {
           ObJsonObject *embedding_obj = static_cast<ObJsonObject *>(embedding_node);
           ObJsonNode *embedding = embedding_obj->get_value("embedding");
-          if (OB_ISNULL(embedding) || embedding->json_type() != ObJsonNodeType::J_ARRAY) {
+          ObJsonNode *index_node = embedding_obj->get_value("index");
+          int64_t index = i;
+          if (indexed != (index_node != nullptr) || !is_valid_dense_embedding_vector(embedding)) {
             ret = OB_INVALID_DATA;
-          } else if (OB_FAIL(result_array->append(embedding))) {
+          } else if (indexed) {
+            if (index_node->json_type() == ObJsonNodeType::J_INT) {
+              index = index_node->get_int();
+              if (index < 0 || index >= count) { ret = OB_INVALID_DATA; }
+            } else if (index_node->json_type() == ObJsonNodeType::J_UINT &&
+                       index_node->get_uint() < static_cast<uint64_t>(count)) {
+              index = static_cast<int64_t>(index_node->get_uint());
+            } else {
+              ret = OB_INVALID_DATA;
+            }
+          }
+          if (OB_SUCC(ret)) {
+            if (ordered.at(index) != nullptr) {
+              ret = OB_INVALID_DATA;
+            } else {
+              ordered.at(index) = embedding;
+            }
           }
         }
+      }
+      for (int64_t i = 0; OB_SUCC(ret) && i < count; ++i) {
+        ret = result_array->append(ordered.at(i));
       }
       if (OB_SUCC(ret)) {
         result = result_array;

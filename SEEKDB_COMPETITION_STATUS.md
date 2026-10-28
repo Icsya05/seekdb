@@ -54,3 +54,8 @@ workspace Release 构建，并使用项目原有流程导出头文件和静态�
 
 分支competition/ai-embed-validation-20261028在上一版基础上修复OpenAI provider将非数组data强转为数组，以及接收非数组embedding的问题。实际解析器函数配合JSON/分配边界替身，在原版本UBSan下复现无效向下转换，修复后正常/异常结构用例通过；固定Clang17和真实生产参数目标编译退出0。合并组件回归22项中14通过、8项修改后二进制SQL跳过。
 这是AI_EMBED的部分校验修复，尚未完成元素有限性、维度、乱序映射、NULL与批量等整题要求，也未经过完整数据库集成或独立复核。未合并到competition/seekdb-prelim-integration，上一版提测commit不变。
+
+## 响应内容与顺序校验收尾
+
+新增非空有限数值向量校验；全无index的旧响应保持顺序，全有index时必须是0..N-1完整唯一排列，按index还原；混合/重复/负数/越界/非整数index拒绝。保留原始数值JSON节点，不将向量数值强制改写为double。
+实际解析器边界替身10类用例，修改前9类失败，修改后全部通过UBSan；实际生产目标编译退出0。独立审查未发现Major/Blocker。真实JSON分配和SQL运行仍待新二进制验证；dimension、NULL与跨行批量并未因此全部完成。
