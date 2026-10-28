@@ -229,6 +229,8 @@ int ObOpenAIUtils::ObOpenAIEmbed::parse_output(common::ObIAllocator &allocator,
     if (OB_FAIL(ObAIFuncJsonUtils::get_json_array(allocator, result_array))) {
     } else if (OB_ISNULL(data_node = http_response->get_value("data"))) {
       ret = OB_INVALID_DATA;
+    } else if (data_node->json_type() != ObJsonNodeType::J_ARRAY) {
+      ret = OB_INVALID_DATA;
     } else {
       ObJsonArray *data_array = static_cast<ObJsonArray *>(data_node);
       ObJsonNode *embedding_node = nullptr;
@@ -240,7 +242,7 @@ int ObOpenAIUtils::ObOpenAIEmbed::parse_output(common::ObIAllocator &allocator,
         } else {
           ObJsonObject *embedding_obj = static_cast<ObJsonObject *>(embedding_node);
           ObJsonNode *embedding = embedding_obj->get_value("embedding");
-          if (OB_ISNULL(embedding)) {
+          if (OB_ISNULL(embedding) || embedding->json_type() != ObJsonNodeType::J_ARRAY) {
             ret = OB_INVALID_DATA;
           } else if (OB_FAIL(result_array->append(embedding))) {
           }

@@ -49,3 +49,8 @@ workspace Release 构建，并使用项目原有流程导出头文件和静态�
 6. 继续其余内核任务，分别实现、验证，不把尚未做的项目视为完成。
 
 没有提交未验证代码到比赛平台，没有创建不符合选题要求的官方 Bug PR，也没有预估正式分数。
+
+## AI_EMBED 响应类型校验第一步（独立分支）
+
+分支competition/ai-embed-validation-20261028在上一版基础上修复OpenAI provider将非数组data强转为数组，以及接收非数组embedding的问题。实际解析器函数配合JSON/分配边界替身，在原版本UBSan下复现无效向下转换，修复后正常/异常结构用例通过；固定Clang17和真实生产参数目标编译退出0。合并组件回归22项中14通过、8项修改后二进制SQL跳过。
+这是AI_EMBED的部分校验修复，尚未完成元素有限性、维度、乱序映射、NULL与批量等整题要求，也未经过完整数据库集成或独立复核。未合并到competition/seekdb-prelim-integration，上一版提测commit不变。
