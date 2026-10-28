@@ -124,20 +124,20 @@ static void check_equivalence()
 
 static void check_decode_budget()
 {
-  struct Fixture { const char *text; uint8_t n; };
-  const Fixture cases[] = {{"A", 1}, {"9", 1}, {"\xe4\xb8\xad", 3}, {" ", 1},
-                           {"\xe3\x81\x82", 3}, {"\xf0\x9f\x98\x80", 4}};
+  struct Fixture { const char *text; uint8_t n; uint64_t decodes; };
+  const Fixture cases[] = {{"A", 1, 0}, {"9", 1, 0}, {"\xe4\xb8\xad", 3, 1}, {" ", 1, 0},
+                           {"\xe3\x81\x82", 3, 1}, {"\xf0\x9f\x98\x80", 4, 1}};
   for (const auto &f : cases) {
     CharType type = CharType::USELESS;
     decode_calls = 0;
     require(OB_SUCCESS == ObFTCharUtil::classify_first_char(CS_TYPE_UTF8MB4_BIN, f.text, f.n, type),
             "decode budget fixture return code");
-    if (decode_calls != 1) {
-      std::cerr << "observed decoder calls=" << decode_calls << " expected=1\n";
-      require(false, "a character must be decoded once per classification");
+    if (decode_calls != f.decodes) {
+      std::cerr << "observed decoder calls=" << decode_calls << " expected=" << f.decodes << '\n';
+      require(false, "ASCII needs no decoder call; other characters need at most one");
     }
   }
-  std::cout << "PASS: one decoder call per classification\n";
+  std::cout << "PASS: zero ASCII decoder calls and one per non-ASCII classification\n";
 }
 
 int main(int argc, char **argv)

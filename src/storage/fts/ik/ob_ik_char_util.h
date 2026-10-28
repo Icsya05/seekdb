@@ -448,6 +448,18 @@ inline int ObFTCharUtil::do_classify(const char *input, const uint8_t char_len, 
   ob_wc_t unicode = 0;
   type = CharType::USELESS;
 
+  // UTF-8 ASCII is already a codepoint and cannot be CJK or a surrogate.
+  if (CS_TYPE == CHARSET_UTF8MB4 && OB_NOT_NULL(input) && char_len > 0
+      && static_cast<unsigned char>(input[0]) < 0x80) {
+    unicode = static_cast<unsigned char>(input[0]);
+    if (ObUnicodeBlockUtils::is_alpha(unicode)) {
+      type = CharType::ENGLISH_LETTER;
+    } else if (ObUnicodeBlockUtils::is_arabic(unicode)) {
+      type = CharType::ARABIC_LETTER;
+    }
+    return ret;
+  }
+
   // All predicates inspect the same character; decode it only once.
   if (OB_FAIL(decode_unicode<CS_TYPE>(input, char_len, unicode))) {
   } else if (ObUnicodeBlockUtils::is_alpha(unicode)) {

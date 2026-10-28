@@ -2,9 +2,9 @@
 
 > **For agentic workers:** Execute inline with superpowers:executing-plans. The parent agent performs the final review.
 
-**Goal:** Decode each IK character once while preserving classification and error behavior.
+**Goal:** Decode each IK character at most once while preserving classification and error behavior.
 
-**Architecture:** Keep the existing charset dispatch and ordered Unicode predicates. Reuse the decoded codepoint within `ObFTCharUtil::do_classify`; keep UTF-16 surrogate handling restricted to its existing encodings.
+**Architecture:** Keep the existing charset dispatch and ordered Unicode predicates. UTF-8 ASCII is already a codepoint; reuse one decoded codepoint for other characters within `ObFTCharUtil::do_classify`. Keep UTF-16 surrogate handling restricted to its existing encodings.
 
 **Tech Stack:** C++17, Python 3 standalone unit-test runner, existing charset decoder and Unicode utilities.
 
@@ -40,3 +40,4 @@ Files: `src/storage/fts/ik/ob_ik_char_util.h`; standalone tests and runner under
 - Investigation: the original `do_classify` invokes the same decoder through each predicate: three times for Chinese, four for punctuation, up to six for UTF-16. The official competition branch contains the same code.
 - Ruling: the public checkout omits module unit-test build files. Add a standalone test inside `unittest/storage/fts`, using actual production headers and a temporary platform shim, rather than claim a nonexistent module target passes.
 - Completed: 1,309,594 equivalence comparisons and decoder-budget fixtures pass on GCC 15.2.0 MinGW (-O0/-O2) and GCC 13.3.0 Linux (-O2). Real Linux production headers also pass syntax checking without shims. Details and unrun server/benchmark checks are in `docs/testing/ik-single-decode-2026-10-28.md`.
+- Diagnostic: the first version regressed ASCII by 21.06% at GCC13 -O2. A failing zero-decode ASCII test preceded a guarded ASCII fast path. Differential tests remain green, and two balanced uninstrumented runs improved all four corpora at -O2/-O3. Raw evidence is retained separately under `output/research/seekdb-fts-20261028/`; no competition score is claimed.
