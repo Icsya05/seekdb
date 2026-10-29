@@ -106,6 +106,12 @@ class OllamaSQLTest(unittest.TestCase):
         self.assertEqual((("Ollama",),), self.execute(
             "SELECT provider FROM oceanbase.DBA_OB_AI_MODEL_ENDPOINTS WHERE endpoint_name=%s",
             (self.endpoint,)))
+        # Reload the persisted empty key through a later ALTER, then use it.
+        self.execute("CALL DBMS_AI_SERVICE.ALTER_AI_MODEL_ENDPOINT(%s,%s)",
+                     (self.endpoint, '{"provider":"OLLAMA"}'))
+        self.assertEqual((("still keyless",),), self.execute(
+            "SELECT AI_COMPLETE(%s,%s)", (self.model, "still keyless")))
+        self.assertNotIn("Authorization", self.server.requests[-1][1])
 
     def test_native_completion_is_non_streaming_without_authorization(self):
         self.create(provider="OlLaMa")
@@ -131,9 +137,10 @@ class OllamaSQLTest(unittest.TestCase):
 
     def test_changing_keyless_endpoint_to_openai_requires_key(self):
         self.create()
-        with self.assertRaises(pymysql.MySQLError):
+        with self.assertRaises(pymysql.MySQLError) as caught:
             self.execute("CALL DBMS_AI_SERVICE.ALTER_AI_MODEL_ENDPOINT(%s,%s)",
                          (self.endpoint, '{"provider":"openai"}'))
+        self.assertEqual(11114, caught.exception.args[0])
 
 
 if __name__ == "__main__":
