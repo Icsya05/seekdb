@@ -130,6 +130,7 @@ int ObAIFuncClient::error_handle(CURLcode res)
 int ObAIFuncClient::send_post(ObJsonObject *data, ObJsonObject *&response) 
 {
   int ret = OB_SUCCESS;
+  response = nullptr;
   if (OB_ISNULL(data)) {
     ret = OB_INVALID_ARGUMENT;
   } else if (OB_ISNULL(curl_)) {
@@ -182,6 +183,8 @@ int ObAIFuncClient::send_post(ObJsonObject *data, ObJsonObject *&response)
               allocator_, response_buf.string(), ObJsonInType::JSON_TREE,
               ObJsonInType::JSON_TREE, j_tree))) {
           ret = OB_ERR_INVALID_JSON_TEXT;
+        } else if (OB_ISNULL(j_tree) || j_tree->json_type() != ObJsonNodeType::J_OBJECT) {
+          ret = OB_INVALID_DATA;
         } else {
           response = static_cast<ObJsonObject *>(j_tree);
         }
@@ -197,6 +200,7 @@ int ObAIFuncClient::send_post(common::ObIAllocator &allocator,
                               ObJsonObject *&response) 
 {
   int ret = OB_SUCCESS;
+  response = nullptr;
   if (OB_ISNULL(data)) {
     ret = OB_INVALID_ARGUMENT;
   }
@@ -351,14 +355,16 @@ int ObAIFuncClient::get_batch_result(ObArray<ObJsonObject *> &responses)
   if (is_finished_.load()) {
     CURLMsg *msg;
     int msgs_in_queue;
-    while ((msg = curl_multi_info_read(curlm_, &msgs_in_queue))) {
+    while (OB_SUCC(ret) && (msg = curl_multi_info_read(curlm_, &msgs_in_queue))) {
       if (msg->msg == CURLMSG_DONE) {
         CURL *easy_handle = msg->easy_handle;
         CURLcode res = msg->data.result;
-        if (res == CURLE_OK) {
-          long response_code;
-          curl_easy_getinfo(easy_handle, CURLINFO_RESPONSE_CODE, &response_code);
-          if (response_code != 200) {
+        if (res != CURLE_OK) {
+          ret = error_handle(res);
+        } else {
+          long response_code = 0;
+          if (curl_easy_getinfo(easy_handle, CURLINFO_RESPONSE_CODE, &response_code) != CURLE_OK
+              || response_code / 100 != 2) {
             ret = OB_CURL_ERROR;
           }
         }
@@ -378,6 +384,8 @@ int ObAIFuncClient::get_batch_result(ObArray<ObJsonObject *> &responses)
               allocator_, response_str, ObJsonInType::JSON_TREE,
               ObJsonInType::JSON_TREE, j_tree))) {
         ret = OB_ERR_INVALID_JSON_TEXT;
+      } else if (OB_ISNULL(j_tree) || j_tree->json_type() != ObJsonNodeType::J_OBJECT) {
+        ret = OB_INVALID_DATA;
       } else if (OB_FAIL(responses.push_back(static_cast<ObJsonObject *>(j_tree)))) {
       }
     }
