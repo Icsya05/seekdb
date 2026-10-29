@@ -74,6 +74,130 @@ int ObExprAIEmbed::calc_result_typeN(ObExprResType &type,
   return ret;
 }
 
+int ObExprAIEmbed::eval_ai_embed_batch(const ObExpr &expr, ObEvalCtx &ctx,
+                                     const ObBitVector &skip, const int64_t batch_size)
+{
+  int ret = OB_SUCCESS;
+  ObDatumVector res = expr.locate_expr_datumvector(ctx);
+  ObBitVector &eval_flags = expr.get_evaluated_flags(ctx);
+  ObEvalCtx::TempAllocGuard tmp_alloc_g(ctx);
+  MultimodeAlloctor temp_allocator(tmp_alloc_g.get_allocator());
+  lib::ObMallocHookAttrGuard malloc_guard(lib::ObMemAttr(N_AI_EMBED));
+  ObArray<ObString> model_ids;
+  ObArray<ObString> contents;
+  ObArray<int64_t> dimensions;
+  ObArray<int64_t> rows;
+  ObArray<int64_t> group_heads;
+  ObArray<int64_t> group_ids;
+
+  for (int64_t i = 0; OB_SUCC(ret) && i < expr.arg_cnt_; ++i) {
+    ret = expr.args_[i]->eval_batch(ctx, skip, batch_size);
+  }
+  if (OB_SUCC(ret)) {
+    ObDatumVector models = expr.args_[MODEL_IDX]->locate_expr_datumvector(ctx);
+    ObDatumVector inputs = expr.args_[CONTENT_IDX]->locate_expr_datumvector(ctx);
+    ObDatumVector dims = expr.arg_cnt_ == 3
+        ? expr.args_[DIM_IDX]->locate_expr_datumvector(ctx) : ObDatumVector();
+    // Validate the whole active batch before sending any provider request.
+    for (int64_t i = 0; OB_SUCC(ret) && i < batch_size; ++i) {
+      if (skip.at(i) || eval_flags.at(i)) {
+        continue;
+      }
+      ObString model_id;
+      ObString content;
+      int64_t dim = 0;
+      if (models.at(i)->is_null()) {
+        ret = OB_INVALID_ARGUMENT;
+        LOG_USER_ERROR(OB_INVALID_ARGUMENT, "ai_embed, model id is null");
+      } else if (inputs.at(i)->is_null()) {
+        res.at(i)->set_null();
+        eval_flags.set(i);
+      } else if (OB_FAIL(ObTextStringHelper::read_real_string_data(ctx.exec_ctx_, temp_allocator,
+                     *models.at(i), expr.args_[MODEL_IDX]->datum_meta_,
+                     expr.args_[MODEL_IDX]->obj_meta_.has_lob_header(), model_id))) {
+      } else if (OB_FAIL(ObTextStringHelper::read_real_string_data(ctx.exec_ctx_, temp_allocator,
+                     *inputs.at(i), expr.args_[CONTENT_IDX]->datum_meta_,
+                     expr.args_[CONTENT_IDX]->obj_meta_.has_lob_header(), content))) {
+      } else if (model_id.empty() || content.empty()) {
+        ret = OB_INVALID_ARGUMENT;
+        LOG_USER_ERROR(OB_INVALID_ARGUMENT, "ai_embed, model id or input is empty");
+      } else if (expr.arg_cnt_ == 3
+                 && (dims.at(i)->is_null() || (dim = dims.at(i)->get_int()) <= 0)) {
+        ret = OB_INVALID_ARGUMENT;
+        LOG_USER_ERROR(OB_INVALID_ARGUMENT, "ai_embed, dimension parameter must be a positive integer");
+      } else {
+        int64_t group = 0;
+        for (; group < group_heads.count(); ++group) {
+          const int64_t head = group_heads.at(group);
+          if (model_ids.at(head) == model_id && dimensions.at(head) == dim) {
+            break;
+          }
+        }
+        if (group == group_heads.count() && OB_FAIL(group_heads.push_back(rows.count()))) {
+        } else if (OB_FAIL(model_ids.push_back(model_id))) {
+        } else if (OB_FAIL(contents.push_back(content))) {
+        } else if (OB_FAIL(dimensions.push_back(dim))) {
+        } else if (OB_FAIL(rows.push_back(i))) {
+        } else if (OB_FAIL(group_ids.push_back(group))) {
+        }
+      }
+    }
+  }
+
+  for (int64_t group = 0; OB_SUCC(ret) && group < group_heads.count(); ++group) {
+    const int64_t head = group_heads.at(group);
+    ObString model_id = model_ids.at(head);
+    const int64_t dim = dimensions.at(head);
+    ObArray<ObString> group_contents;
+    ObArray<int64_t> group_rows;
+    ObArray<ObString> results;
+    ObJsonInt *dim_json = nullptr;
+    ObJsonObject *config = nullptr;
+    ObAIFuncExprInfo *info = nullptr;
+    share::ObAiModelEndpointInfo endpoint;
+    query::ObIAiEndpointResolver *resolver =
+        ::oceanbase::share::server_service<::oceanbase::query::ObIAiEndpointResolver>();
+    for (int64_t i = 0; OB_SUCC(ret) && i < rows.count(); ++i) {
+      if (group_ids.at(i) == group) {
+        if (OB_FAIL(group_contents.push_back(contents.at(i)))) {
+        } else if (OB_FAIL(group_rows.push_back(rows.at(i)))) {
+        }
+      }
+    }
+    if (OB_SUCC(ret) && dim > 0) {
+      if (OB_FAIL(ObAIFuncJsonUtils::get_json_object(temp_allocator, config))) {
+      } else if (OB_FAIL(ObAIFuncJsonUtils::get_json_int(temp_allocator, dim, dim_json))) {
+      } else if (OB_FAIL(config->add("dimensions", dim_json))) {
+      }
+    }
+    if (OB_FAIL(ret)) {
+    } else if (OB_FAIL(ObAIFuncUtils::get_ai_func_info(temp_allocator, model_id, info))) {
+    } else if (OB_ISNULL(resolver)) {
+      ret = OB_ERR_UNEXPECTED;
+    } else if (OB_FAIL(resolver->resolve_by_model_name(model_id, temp_allocator, endpoint))) {
+    } else {
+      ObAIFuncModel model(temp_allocator, *info, endpoint);
+      if (OB_FAIL(model.call_dense_embedding_vector_v2(group_contents, config, results))) {
+      } else if (results.count() != group_rows.count()) {
+        ret = OB_ERR_UNEXPECTED;
+      } else {
+        for (int64_t i = 0; OB_SUCC(ret) && i < results.count(); ++i) {
+          const int64_t row = group_rows.at(i);
+          ObTextStringDatumResult text_result(expr.datum_meta_.type_, &expr, &ctx, res.at(row));
+          // Each row needs its own expression result allocation, including after a skipped row.
+          if (OB_FAIL(text_result.init_with_batch_idx(results.at(i).length(), row))) {
+          } else if (OB_FAIL(text_result.append(results.at(i)))) {
+          } else {
+            text_result.set_result();
+            eval_flags.set(row);
+          }
+        }
+      }
+    }
+  }
+  return ret;
+}
+
 int ObExprAIEmbed::eval_ai_embed(const ObExpr &expr, ObEvalCtx &ctx, ObDatum &res) 
 {
   INIT_SUCC(ret);
@@ -171,6 +295,7 @@ int ObExprAIEmbed::cg_expr(ObExprCGCtx &expr_cg_ctx,
 
   if (OB_SUCC(ret)) {
     rt_expr.eval_func_ = ObExprAIEmbed::eval_ai_embed;
+    rt_expr.eval_batch_func_ = ObExprAIEmbed::eval_ai_embed_batch;
   }
   return ret;
 }
