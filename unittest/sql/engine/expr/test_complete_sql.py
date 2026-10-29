@@ -20,10 +20,14 @@ class CompletionHandler(BaseHTTPRequestHandler):
     def do_POST(self):
         body = json.loads(self.rfile.read(int(self.headers['Content-Length'])))
         self.server.requests.append(body)
-        content = {'valid': 'Unicode 中文 completion', 'empty': '', 'nonstring': {'text': 'invalid'}}[
-            self.server.mode]
-        payload = json.dumps({'choices': [{'message': {'content': content}}]}, ensure_ascii=False).encode()
-        self.send_response(200)
+        mode = self.server.mode
+        if mode in ('array_root', 'scalar_root', 'null_root', 'invalid_json'):
+            payload = {'array_root': b'[]', 'scalar_root': b'"text"',
+                       'null_root': b'null', 'invalid_json': b'{'}[mode]
+        else:
+            content = {'empty': '', 'nonstring': {'text': 'invalid'}}.get(mode, 'Unicode 中文 completion')
+            payload = json.dumps({'choices': [{'message': {'content': content}}]}, ensure_ascii=False).encode()
+        self.send_response(201 if mode == 'created' else 200)
         self.send_header('Content-Type', 'application/json')
         self.send_header('Content-Length', str(len(payload)))
         self.end_headers()
@@ -100,6 +104,20 @@ class CompletionSQL(unittest.TestCase):
         self.server.mode = 'nonstring'
         with self.assertRaises(pymysql.MySQLError):
             self.execute('SELECT AI_COMPLETE(%s,%s)', (self.model, 'prompt'))
+
+    def test_non_object_or_invalid_json_envelope_rejected_without_losing_connection(self):
+        for mode in ('array_root', 'scalar_root', 'null_root', 'invalid_json'):
+            with self.subTest(mode=mode):
+                self.server.mode = mode
+                with self.assertRaises(pymysql.MySQLError):
+                    self.execute('SELECT AI_COMPLETE(%s,%s)', (self.model, 'prompt'))
+                self.assertEqual(((1,),), self.execute('SELECT 1'))
+                self.server.mode = 'valid'
+                self.completion()
+
+    def test_successful_201_response(self):
+        self.server.mode = 'created'
+        self.completion()
 
 
 if __name__ == '__main__':
