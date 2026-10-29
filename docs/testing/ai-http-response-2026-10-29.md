@@ -16,6 +16,6 @@ Actual production methods with curl/parser/allocation boundary doubles:
 17 transport/root/status scenarios plus one null-printer scenario, 14 baseline
 failures including UBSan errors, then all scenarios passed after correction.
 These doubles verify control flow, not the real curl/parser integration.
-Both modified production translation units compiled with the native Clang 17
-Release flags (exit 0). New-server SQL verification is tracked separately;
-no full AI-task completion is implied by component tests.
+Both modified production translation units compiled with native Clang 17 flags
+(exit 0). The full binary passed real SQL malformed-root, recovery and HTTP 201
+cases. See [integration verification](ai-function-integration-2026-10-29.md).
