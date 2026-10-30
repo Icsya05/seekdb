@@ -100,6 +100,30 @@ class EmbedBatchSQL(unittest.TestCase):
         self.assertEqual(1, len(self.server.requests), 'a scan batch must issue one multi-input request')
         self.assertEqual(8, len(self.server.requests[0]['input']))
 
+    def test_json_length_wrapper_preserves_child_batching(self):
+        rows = self.execute(f'SELECT id,JSON_LENGTH(AI_EMBED(%s,content)) FROM {self.table}', (self.model,))
+        self.assertEqual([(i, 2) for i in range(1, 9)], list(rows))
+        self.assertEqual(1, len(self.server.requests), 'JSON_LENGTH must evaluate its child as a batch')
+        self.assertEqual(8, len(self.server.requests[0]['input']))
+
+    def test_json_length_path_wrapper_null_filter_limit(self):
+        self.execute(f'UPDATE {self.table} SET content=NULL WHERE id=3')
+        rows = self.execute(f"SELECT id,JSON_LENGTH(AI_EMBED(%s,content,3),'$') "
+                            f'FROM {self.table} WHERE MOD(id,2)=1 LIMIT 3', (self.model,))
+        self.assertEqual([(1, 3), (3, None), (5, 3)], list(rows))
+        self.assertEqual(1, len(self.server.requests))
+        self.assertEqual(['1:中文', '5:中文'], self.requested_inputs())
+
+    def test_json_length_ordinary_text_and_path_semantics(self):
+        documents = ['[1,2]', '{"a":[1,2,3]}', None, '{}', '[]', '"中文"', 'true', '{"a":null}']
+        with self.connection.cursor() as cursor:
+            cursor.executemany(f'UPDATE {self.table} SET content=%s WHERE id=%s',
+                               [(document, i) for i, document in enumerate(documents, 1)])
+        rows = self.execute(f"SELECT id,JSON_LENGTH(content),JSON_LENGTH(content,'$.a') FROM {self.table}")
+        self.assertEqual([(1, 2, None), (2, 1, 3), (3, None, None), (4, 0, None),
+                          (5, 0, None), (6, 1, None), (7, 1, None), (8, 1, 1)], list(rows))
+        self.assertEqual([], self.server.requests)
+
     def test_null_inputs_excluded_and_rows_preserved(self):
         self.execute(f'UPDATE {self.table} SET content=NULL WHERE id IN (2,5)')
         rows = self.scan()
