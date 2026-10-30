@@ -164,12 +164,28 @@ int ObExprJsonLength::eval_json_length(const ObExpr &expr, ObEvalCtx &ctx, ObDat
   return ret;
 }
 
+int ObExprJsonLength::eval_json_length_batch(const ObExpr &expr, ObEvalCtx &ctx,
+                                            const ObBitVector &skip, const int64_t size)
+{
+  int ret = OB_SUCCESS;
+  // JSON_LENGTH evaluates both arguments unconditionally. Evaluate its children
+  // in batches first so a batch-capable child is not forced into scalar calls.
+  for (int64_t i = 0; OB_SUCC(ret) && i < expr.arg_cnt_; ++i) {
+    ret = expr.args_[i]->eval_batch(ctx, skip, size);
+  }
+  if (OB_SUCC(ret)) {
+    ret = expr_default_eval_batch_func(expr, ctx, skip, size);
+  }
+  return ret;
+}
+
 int ObExprJsonLength::cg_expr(ObExprCGCtx &expr_cg_ctx, const ObRawExpr &raw_expr,
                               ObExpr &rt_expr) const
 {
   UNUSED(expr_cg_ctx);
   UNUSED(raw_expr);
   rt_expr.eval_func_ = eval_json_length;
+  rt_expr.eval_batch_func_ = eval_json_length_batch;
   return OB_SUCCESS;
 }
 
