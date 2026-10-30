@@ -19,6 +19,9 @@ batches, propagates errors and then reuses the existing scalar calculation over
 cached child values through expr_default_eval_batch_func. The standalone scalar
 path and JSON parsing/path semantics remain unchanged.
 
-The actual production translation unit compiled successfully with native Clang 17
-Release flags. Independent review and new-binary SQL GREEN are still required;
-this development commit does not claim successful integration or platform results.
+The production translation unit compiled with native Clang 17 flags. Independent
+review found no Major/Blocker. On 2026-10-30 the full 8f2f75122 binary built and
+passed all 51 real SQL tests, including both previously failing batching cases
+and ordinary JSON/path/NULL semantics. The unchanged official enhancement script
+also exited 0 and its full recorded output matched the prior 140f output byte for
+byte. This local verification does not establish a competition score.
