@@ -28,6 +28,7 @@ namespace oceanbase
 namespace sql
 {
 class ObExpr;
+class FileScanSpec;
 class ObLogLimit;
 class ObLimitSpec;
 class ObLogDistinct;
@@ -380,6 +381,7 @@ private:
   int generate_spec(ObLogInsert &op, ObPxMultiPartSSTableInsertSpec &spec, const bool in_root_job);
   int generate_spec(ObLogSelectInto &op, ObSelectIntoSpec &spec, const bool in_root_job);
   int generate_spec(ObLogFunctionTable &op, ObFunctionTableSpec &spec, const bool in_root_job);
+  int generate_spec(ObLogFunctionTable &op, FileScanSpec &spec, const bool in_root_job);
   int generate_spec(ObLogJsonTable &op, ObJsonTableSpec &spec, const bool in_root_job);
 
   // online optimizer stats gathering

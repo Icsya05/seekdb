@@ -841,6 +841,7 @@ def make_sys_var_sql_cpp(pdir, filename, list_sorted_by_name, list_sorted_by_id)
   wfile.write("#define USING_LOG_PREFIX SQL_SESSION\n");
   wfile.write("#include \"" + pdir + "/" + base_name.replace(".cpp", ".h") + "\"\n")
   wfile.write("#include \"lib/utility/ob_smart_call.h\"\n")
+  wfile.write("#include \"lib/ob_check_macros.h\"\n")
   wfile.write("#include \"share/system_variable/ob_system_variable_init.h\"\n")
   wfile.write("#include \"share/system_variable/ob_sys_var_meta.h\"\n")
   wfile.write("using namespace oceanbase::common;\n");

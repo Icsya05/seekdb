@@ -511,6 +511,7 @@ END_P SET_VAR DELIMITER
 %type <node> column_list_with_boost with_param_column_ref
 %type <node> es_sql_opt
 %type <node> hybrid_search_expr hybrid_search_param
+%type <node> file_table_expr file_table_call file_table_options file_table_option file_table_option_name
 %type <node> vector_similarity_expr vector_similarity_metric
 %type <node> algorithm_opt lock_opt
 %type <node> flush_privileges_stmt opt_flush_privileges_scope
@@ -10848,6 +10849,10 @@ tbl_name
 {
   $$ = $1;
 }
+| file_table_expr
+{
+  $$ = $1;
+}
 ;
 
 tbl_name:
@@ -17426,6 +17431,41 @@ JSON '(' column_name ')' STORE AS '(' lob_storage_parameters ')'
   merge_nodes(params, result, T_ARGUMENT_LIST, $8);
   malloc_non_terminal_node($$, result->malloc_pool_, T_LOB_STORAGE_CLAUSE, 3, type_node, $3, params);
 }
+;
+
+file_table_expr:
+file_table_call %prec LOWER_PARENS { $$ = $1; }
+| file_table_call relation_name { $$ = $1; $$->children_[3] = $2; }
+| file_table_call AS relation_name { $$ = $1; $$->children_[3] = $3; }
+;
+
+file_table_call:
+NAME_OB '(' STRING_VALUE file_table_options ')'
+{
+  ParseNode *options = NULL;
+  merge_nodes(options, result, T_ARGUMENT_LIST, $4);
+  malloc_non_terminal_node($$, result->malloc_pool_, T_FILE_TABLE_EXPRESSION, 4, $1, $3, options, NULL);
+  $$->is_tree_not_param_ = true; // File path/options determine the bound schema.
+}
+;
+
+file_table_options:
+/* empty */ { $$ = NULL; }
+| file_table_options ',' file_table_option
+{
+  malloc_non_terminal_node($$, result->malloc_pool_, T_LINK_NODE, 2, $1, $3);
+}
+;
+
+file_table_option:
+file_table_option_name COMP_EQ signed_literal
+{
+  malloc_non_terminal_node($$, result->malloc_pool_, T_FILE_TABLE_OPTION, 2, $1, $3);
+}
+;
+
+file_table_option_name:
+relation_name { $$ = $1; }
 ;
 
 unnest_expr:

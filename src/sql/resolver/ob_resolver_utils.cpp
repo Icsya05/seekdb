@@ -21,6 +21,7 @@
 #include "sql/resolver/cmd/ob_load_data_stmt.h"
 
 #include "sql/engine/cmd/ob_load_data_parser.h"
+#include "sql/engine/basic/ob_file_scan_op.h"
 #include "sql/resolver/cmd/ob_load_data_stmt.h"
 #include "sql/resolver/ob_resolver_utils.h"
 #include "sql/code_generator/ob_column_index_provider.h"
@@ -121,6 +122,30 @@ int ObResolverUtils::get_all_function_table_column_names(const TableItem &table_
                                                          ObIArray<ObString> &column_names)
 {
   int ret = OB_SUCCESS;
+  if (table_item.is_file_table_) {
+    file_sql::Binding binding;
+    std::string error;
+    if (OB_ISNULL(table_item.function_table_expr_) || !table_item.function_table_expr_->is_const_expr()) {
+      ret = OB_ERR_UNEXPECTED;
+    } else {
+      const ObObj &object = static_cast<const ObConstRawExpr *>(table_item.function_table_expr_)->get_value();
+      const ObString json = object.get_string();
+      const int status = file_sql::deserialize_binding(std::string(json.ptr(), json.length()), binding, error);
+      if (status != file_sql::OK) {
+        ret = file_sql::to_sql_error(status, error);
+      } else {
+        for (const file_sql::Column &column : binding.columns) {
+          ObString name;
+          if (OB_FAIL(ob_write_string(*params.allocator_, ObString(static_cast<int32_t>(column.name.size()), column.name.data()), name))) {
+            break;
+          } else if (OB_FAIL(column_names.push_back(name))) {
+            break;
+          }
+        }
+      }
+    }
+    return ret;
+  }
   ObRawExpr *table_expr = NULL;
   ObPLPackageGuard *package_guard = nullptr;
   const ObUserDefinedType *user_type = NULL;

@@ -95,6 +95,7 @@
 #include "sql/engine/pdml/static/ob_px_sstable_insert_op.h"
 #include "sql/engine/basic/ob_select_into_op.h"
 #include "sql/engine/basic/ob_function_table_op.h"
+#include "sql/engine/basic/ob_file_scan_op.h"
 #include "sql/engine/basic/ob_json_table_op.h"
 #include "sql/engine/dml/ob_table_insert_op.h"
 #include "sql/engine/basic/ob_stat_collector_op.h"
@@ -5532,6 +5533,32 @@ int ObStaticEngineCG::generate_spec(ObLogFunctionTable &op, ObFunctionTableSpec 
   return ret;
 }
 
+int ObStaticEngineCG::generate_spec(ObLogFunctionTable &op, FileScanSpec &spec,
+                                   const bool in_root_job)
+{
+  UNUSED(in_root_job);
+  int ret = OB_SUCCESS;
+  if (OB_ISNULL(op.get_stmt()) || OB_ISNULL(op.get_value_expr())) {
+    ret = OB_ERR_UNEXPECTED;
+  } else if (OB_FAIL(generate_rt_expr(*op.get_value_expr(), spec.binding_expr_))) {
+  } else if (OB_FAIL(spec.column_exprs_.init(op.get_stmt()->get_column_size()))) {
+  } else if (OB_FAIL(spec.source_column_ids_.init(op.get_stmt()->get_column_size()))) {
+  } else {
+    for (int64_t i = 0; OB_SUCC(ret) && i < op.get_stmt()->get_column_size(); ++i) {
+      const ColumnItem *column = op.get_stmt()->get_column_item(i);
+      if (column->table_id_ == op.get_table_id() && column->expr_->is_explicited_reference()) {
+        ObExpr *expr = nullptr;
+        if (OB_FAIL(mark_expr_self_produced(column->expr_))) {
+        } else if (OB_FAIL(generate_rt_expr(*column->expr_, expr))) {
+        } else if (OB_FAIL(spec.column_exprs_.push_back(expr))) {
+        } else if (OB_FAIL(spec.source_column_ids_.push_back(column->column_id_ - OB_APP_MIN_COLUMN_ID))) {
+        }
+      }
+    }
+  }
+  return ret;
+}
+
 int ObStaticEngineCG::generate_spec(ObLogJsonTable &op, ObJsonTableSpec &spec,
     const bool in_root_job)
 {
@@ -6116,7 +6143,9 @@ int ObStaticEngineCG::get_phy_op_type(ObLogicalOperator &log_op,
       break;
     }
     case log_op_def::LOG_FUNCTION_TABLE: {
-      type = PHY_FUNCTION_TABLE;
+      const ObLogFunctionTable &function = static_cast<const ObLogFunctionTable &>(log_op);
+      const TableItem *table = log_op.get_stmt()->get_table_item_by_id(function.get_table_id());
+      type = table != nullptr && table->is_file_table_ ? PHY_FILE_SCAN : PHY_FUNCTION_TABLE;
       break;
     }
     case log_op_def::LOG_JSON_TABLE: {
