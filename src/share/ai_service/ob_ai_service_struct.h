@@ -33,6 +33,7 @@ class ObAiModelEndpointInfo
 {
   friend class ObAiServiceProxy;
 public:
+  static constexpr int64_t DEFAULT_MAX_CONCURRENCY = 16;
   ObAiModelEndpointInfo() { reset(); }
   ~ObAiModelEndpointInfo() = default;
 
@@ -49,6 +50,8 @@ public:
     request_transform_fn_.reset();
     response_transform_fn_.reset();
     endpoint_id_ = OB_INVALID_ID;
+    max_concurrency_ = DEFAULT_MAX_CONCURRENCY;
+    effective_max_concurrency_ = DEFAULT_MAX_CONCURRENCY;
   }
 
   int parse_from_json_base(common::ObArenaAllocator &allocator,const ObString &name, const common::ObIJsonBase &params_jbase);
@@ -68,13 +71,15 @@ public:
   const ObString &get_request_transform_fn() const { return request_transform_fn_; }
   const ObString &get_response_transform_fn() const { return response_transform_fn_; }
   uint64_t get_endpoint_id() const { return endpoint_id_; }
+  int64_t get_max_concurrency() const { return max_concurrency_; }
+  int64_t get_effective_max_concurrency() const { return effective_max_concurrency_; }
   void set_endpoint_id(uint64_t endpoint_id) { endpoint_id_ = endpoint_id; }
 
   TO_STRING_KV(K_(name),
                K_(scope),
                K_(endpoint_id),
                K_(url),
-               K_(access_key),
+               K_(max_concurrency),
                K_(ai_model_name),
                K_(provider),
                K_(request_model_name),
@@ -88,6 +93,8 @@ private:
   int decrypt_access_key_(common::ObIAllocator &allocator, const ObString &encrypted_access_key, ObString &unencrypted_access_key) const;
 private:
   uint64_t endpoint_id_;
+  int64_t max_concurrency_;
+  int64_t effective_max_concurrency_;
   ObString name_;
   ObString scope_;
   ObString ai_model_name_;

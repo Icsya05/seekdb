@@ -1334,6 +1334,7 @@ int ObAIFuncModel::call_completion(ObString &prompt, ObJsonObject *config, ObStr
   ObString prompt_str;
   ObString result_str;
   ObAIFuncClient client;
+  client.set_max_concurrency(endpoint_info_.get_effective_max_concurrency());
   ObString unencrypted_access_key;
   ObString request_model_name = get_request_model_name();
   if (!is_completion_type()) {
@@ -1375,6 +1376,7 @@ int ObAIFuncModel::call_completion_vector(ObArray<ObString> &prompts, ObJsonObje
   ObString prompt_str;
   ObString result_str;
   ObAIFuncClient client;
+  client.set_max_concurrency(endpoint_info_.get_effective_max_concurrency());
   ObString unencrypted_access_key;
   ObString request_model_name = get_request_model_name();
   if (!is_completion_type()) {
@@ -1439,6 +1441,7 @@ int ObAIFuncModel::call_dense_embedding_vector(ObArray<ObString> &contents, ObJs
   ObIJsonBase *result_base = nullptr;
   ObAIFuncIEmbed *embed_provider = nullptr;
   ObAIFuncClient client;
+  client.set_max_concurrency(endpoint_info_.get_effective_max_concurrency());
   ObString request_model_name = get_request_model_name();
   ObString unencrypted_access_key;
   if (!is_dense_embedding_type()) {
@@ -1519,6 +1522,7 @@ int ObAIFuncModel::call_dense_embedding_vector_v2(ObArray<ObString> &content, Ob
   ObAIFuncIEmbed *embed_provider = nullptr;
   ObString result_str;
   ObAIFuncClient client;
+  client.set_max_concurrency(endpoint_info_.get_effective_max_concurrency());
   int64_t dimension = 0;
   if (OB_NOT_NULL(config)) {
     ObJsonNode *dimension_node = config->get_value("dimensions");
@@ -1591,6 +1595,7 @@ int ObAIFuncModel::call_rerank(ObString &query, ObJsonArray *contents, ObJsonArr
   ObArray<ObString> headers;
   ObAIFuncIRerank *provider = nullptr;
   ObAIFuncClient client;
+  client.set_max_concurrency(endpoint_info_.get_effective_max_concurrency());
   ObString access_key;
   ObString model_name = get_request_model_name();
   struct RankedResult {
