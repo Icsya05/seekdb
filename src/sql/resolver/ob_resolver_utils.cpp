@@ -15,6 +15,7 @@
  */
 
 #define USING_LOG_PREFIX SQL_RESV
+#include "sql/engine/basic/ob_file_scan.h"
 
 #include "config_bridge.h"
 #include "share/config/ob_config_helper.h"
@@ -121,6 +122,19 @@ int ObResolverUtils::get_all_function_table_column_names(const TableItem &table_
                                                          ObIArray<ObString> &column_names)
 {
   int ret = OB_SUCCESS;
+  if (table_item.is_file_table_) {
+    FileScanDefinition definition;
+    if (table_item.function_table_expr_ == nullptr || !table_item.function_table_expr_->is_const_expr()) {
+      return OB_ERR_UNEXPECTED;
+    }
+    ret = definition.decode(static_cast<ObConstRawExpr *>(table_item.function_table_expr_)->get_value().get_string());
+    for (const auto &column : definition.columns) {
+      ObString name;
+      if (OB_SUCC(ret)) { ret = ob_write_string(*params.allocator_, ObString(column.name.size(),column.name.data()),name); }
+      if (OB_SUCC(ret)) { ret = column_names.push_back(name); }
+    }
+    return ret;
+  }
   ObRawExpr *table_expr = NULL;
   ObPLPackageGuard *package_guard = nullptr;
   const ObUserDefinedType *user_type = NULL;

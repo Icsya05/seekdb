@@ -5450,6 +5450,8 @@ int ObStaticEngineCG::generate_spec(ObLogSelectInto &op, ObSelectIntoSpec &spec,
   UNUSED(in_root_job);
   ObIAllocator &alloc = phy_plan_->get_allocator();
   int ret = OB_SUCCESS;
+  const auto *select = static_cast<const ObSelectStmt *>(op.get_stmt());
+  spec.is_file_copy_ = select != nullptr && select->get_select_into() != nullptr && select->get_select_into()->is_file_copy_;
   if (OB_UNLIKELY(1 != op.get_num_of_child())) {
     ret = OB_ERR_UNEXPECTED;
   } else if (OB_FAIL(deep_copy_obj(alloc, op.get_outfile_name(), spec.outfile_name_))) {
@@ -5503,6 +5505,7 @@ int ObStaticEngineCG::generate_spec(ObLogFunctionTable &op, ObFunctionTableSpec 
   if (OB_ISNULL(op.get_stmt())) {
     ret = OB_ERR_UNEXPECTED;
   } else if (OB_FAIL(spec.column_exprs_.init(op.get_stmt()->get_column_size()))) {
+  } else if (OB_FAIL(spec.file_column_indices_.init(op.get_stmt()->get_column_size()))) {
   } else if (OB_UNLIKELY(op.get_num_of_child() > 1)) {
     ret = OB_ERR_UNEXPECTED;
   } else if (OB_ISNULL(value_raw_expr = op.get_value_expr())) {
@@ -5511,6 +5514,8 @@ int ObStaticEngineCG::generate_spec(ObLogFunctionTable &op, ObFunctionTableSpec 
   } else {
     spec.has_correlated_expr_ = value_raw_expr->has_flag(CNT_DYNAMIC_PARAM);
     spec.value_expr_ = value_expr;
+    const TableItem *table = op.get_stmt()->get_table_item_by_id(op.get_table_id());
+    spec.is_file_table_ = table != nullptr && table->is_file_table_;
     for (int64_t i = 0; OB_SUCC(ret) && i < op.get_output_exprs().count(); ++i) {
       if (OB_FAIL(mark_expr_self_produced(op.get_output_exprs().at(i)))) {
       }
@@ -5526,6 +5531,9 @@ int ObStaticEngineCG::generate_spec(ObLogFunctionTable &op, ObFunctionTableSpec 
         OZ (mark_expr_self_produced(col_item->expr_));
         OZ (generate_rt_expr(*col_item->expr_, rt_expr));
         OZ (spec.column_exprs_.push_back(rt_expr));
+        if (spec.is_file_table_) {
+          OZ (spec.file_column_indices_.push_back(col_item->column_id_ - OB_APP_MIN_COLUMN_ID));
+        }
       }
     }
   }
@@ -6485,6 +6493,10 @@ int ObStaticEngineCG::check_op_vectorization(ObLogicalOperator *op, ObSqlSchemaG
     if (spf_op->is_update_set()) {
       disable_vectorize = true;
     }
+  } else if (log_op_def::LOG_FUNCTION_TABLE == op->get_type()) {
+    const auto *function = static_cast<ObLogFunctionTable *>(op);
+    const TableItem *table = op->get_stmt()->get_table_item_by_id(function->get_table_id());
+    disable_vectorize = table == nullptr || !table->is_file_table_;
   } else if (log_op_def::LOG_JOIN == op->get_type()) {
     // do nothing
   } else if (log_op_def::LOG_GROUP_BY == op->get_type()) {
