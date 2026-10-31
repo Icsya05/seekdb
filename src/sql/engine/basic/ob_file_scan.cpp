@@ -23,6 +23,7 @@
 #include "common/timezone/ob_time_convert.h"
 #include "lib/charset/ob_charset.h"
 #include "lib/oblog/ob_warning_buffer.h"
+#include "lib/worker.h"
 #include "share/ob_errno.h"
 
 namespace oceanbase { namespace sql {
@@ -420,6 +421,11 @@ int FileScanReader::json_record(std::vector<Cell> &cells, std::vector<std::strin
 int FileScanReader::record(std::vector<Cell> &cells, std::vector<std::string> &names)
 {
   int64_t number = record_number_ + 1;
+  if ((record_number_ & 255) == 0) {
+    int status = THIS_WORKER.check_status();
+    if (status != OB_SUCCESS) { return status; }
+    if (THIS_WORKER.is_timeout()) { return OB_TIMEOUT; }
+  }
   int ret = check_unchanged();
   if (OB_SUCC(ret)) {
     ret = definition_.format == FileScanDefinition::CSV ? csv_record(cells) : json_record(cells, names);
@@ -477,8 +483,12 @@ int FileScanReader::discover(const std::string &pattern, const ObString &root)
   if (base.empty() || base.find('\0') != std::string::npos) { return OB_INVALID_ARGUMENT; }
   DIR *entries = opendir(checked.c_str());
   if (entries == nullptr) { return OB_IO_ERROR; }
-  size_t path_bytes = 0;
+  size_t path_bytes = 0, visited = 0;
   while (OB_SUCC(ret)) {
+    if ((visited++ & 255) == 0) {
+      if (OB_FAIL(THIS_WORKER.check_status())) { break; }
+      if (THIS_WORKER.is_timeout()) { ret = OB_TIMEOUT; break; }
+    }
     errno = 0;
     dirent *entry = readdir(entries);
     if (entry == nullptr) { if (errno != 0) { ret = OB_IO_ERROR; } break; }

@@ -348,7 +348,13 @@ int ParquetFileReader::State::load_page(Column &c)
     }
     c.position += compressed;
     const Meta *v2 = kind == 3 ? header.field(8) : nullptr;
-    int64_t prefix = v2 == nullptr ? 0 : v2->integer(5)+v2->integer(6);
+    int64_t prefix = 0;
+    if (v2 != nullptr) {
+      int64_t definition_bytes = v2->integer(5), repetition_bytes = v2->integer(6);
+      if (definition_bytes < 0 || definition_bytes > expanded
+          || repetition_bytes < 0 || repetition_bytes > expanded-definition_bytes) { return OB_INVALID_DATA; }
+      prefix = definition_bytes+repetition_bytes;
+    }
     if (prefix < 0 || prefix > compressed || prefix > expanded) { return OB_INVALID_DATA; }
     bool uncompressed = c.chunk.codec == 0 || (v2 != nullptr && v2->integer(7,1) == 0);
     if (uncompressed) {
