@@ -162,20 +162,28 @@ int validate_result(const ObColumnSchemaV2 &column, const ObObj &value,
     } else if (column.is_collection() && OB_FAIL(ObVectorIndexUtil::get_vector_dim_from_extend_type_info(
                    column.get_extended_type_info(), dimension))) {
     } else if (column.is_collection()) {
-      ret = out.assign_fmt("CAST(%s AS VECTOR(%ld))", encoded.ptr(), dimension);
+      ret = out.assign(encoded);
     } else {
       ret = out.assign_fmt("CAST(%s AS JSON)", encoded.ptr());
     }
     // Validate before publishing any member of the group. Native casts enforce
     // JSON grammar and the VECTOR shape; they never call a model here.
-    if (OB_SUCC(ret)) { ret = query.assign_fmt("SELECT %s", out.ptr()); }
+    if (OB_SUCC(ret)) {
+      ret = column.is_collection() ? query.assign_fmt("SELECT CAST(VECTOR_DIMS(%s) AS SIGNED)", out.ptr())
+                                   : query.assign_fmt("SELECT %s", out.ptr());
+    }
     if (OB_SUCC(ret)) {
       ObTimeoutCtx timeout;
       ObMySQLProxy::MySQLResult result;
       if (OB_FAIL(ObShareUtil::set_default_timeout_ctx(timeout, 3L * 1000 * 1000))) {
       } else if (OB_FAIL(GCTX.sql_proxy_->read(result, query.ptr()))) {
       } else if (OB_ISNULL(result.get_result())) { ret = OB_ERR_UNEXPECTED; }
-      else { ret = result.get_result()->next(); }
+      else if (OB_FAIL(result.get_result()->next())) {
+      } else if (column.is_collection()) {
+        int64_t actual_dimension = 0;
+        if (OB_FAIL(result.get_result()->get_int(0L, actual_dimension))) {
+        } else if (actual_dimension != dimension) { ret = OB_INVALID_ARGUMENT; }
+      }
     }
   } else {
     ObDataTypeCastParams params;
