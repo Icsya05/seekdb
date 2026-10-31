@@ -4863,11 +4863,8 @@ column_definition_ref data_type opt_column_attribute_list opt_column_reference o
   merge_nodes(attributes, result, T_COLUMN_ATTRIBUTES, $10);
   malloc_non_terminal_node($$, result->malloc_pool_, T_COLUMN_DEFINITION, 7, $1, $2, attributes, $7, $9, $12, $4);
 }
-| column_definition_ref data_type opt_collation NAME_OB COLUMN '(' expr ')' opt_ai_column_options opt_generated_column_attribute_list opt_position_column
+| column_definition_ref data_type opt_collation AI COLUMN '(' expr ')' opt_ai_column_options opt_generated_column_attribute_list opt_position_column
 {
-  if ($4->str_len_ != 2 || strncasecmp($4->str_value_, "ai", 2) != 0) {
-    yyerror(&@4, result, "expected AI COLUMN"); YYABORT;
-  }
   ParseNode *attributes = NULL;
   set_data_type_collation($2, $3, true, false);
   dup_expr_string($7, result, @7.first_column, @7.last_column);
@@ -12744,12 +12741,9 @@ SHOW opt_extended_or_full TABLES opt_from_or_in_database_clause opt_show_conditi
   $$->value_ = $2[0];
   malloc_non_terminal_node($$, result->malloc_pool_, T_SHOW_COLUMNS, 4, $$, $5, $6, $7);
 }
-| SHOW NAME_OB COLUMNS from_or_in relation_factor opt_from_or_in_database_clause opt_show_condition
+| SHOW AI COLUMNS from_or_in relation_factor opt_from_or_in_database_clause opt_show_condition
 {
   (void)$4;
-  if ($2->str_len_ != 2 || strncasecmp($2->str_value_, "ai", 2) != 0) {
-    yyerror(&@2, result, "expected SHOW AI COLUMNS"); YYABORT;
-  }
   malloc_terminal_node($$, result->malloc_pool_, T_INT);
   $$->value_ = 4;
   malloc_non_terminal_node($$, result->malloc_pool_, T_SHOW_COLUMNS, 4, $$, $5, $6, $7);
