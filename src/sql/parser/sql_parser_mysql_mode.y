@@ -14776,6 +14776,25 @@ alter_with_opt_hint TABLE relation_factor alter_table_actions
   // RETRY is transactional DML. The resolver supplies only the selected AI
   // column's invalidation assignments; users cannot supply arbitrary writes.
   // UPDATE_LIST is the target identifier rather than a user assignment list.
+  $7->value_ = 0;
+  $$->value_ = 0;
+}
+| alter_with_opt_hint TABLE relation_factor NAME_OB AI COLUMN column_name opt_where ',' alter_table_actions
+{
+  (void)($5);
+  (void)($10);
+  if ($4->str_len_ != 5 || strncasecmp($4->str_value_, "retry", 5) != 0 || $4->is_input_quoted_) {
+    yyerror(&@4, result, "expected RETRY AI COLUMN");
+    YYERROR;
+  }
+  ParseNode *tables = NULL;
+  malloc_non_terminal_node(tables, result->malloc_pool_, T_TABLE_REFERENCES, 1, $3);
+  malloc_non_terminal_node($$, result->malloc_pool_, T_UPDATE, 11,
+                          NULL, tables, $7, $8, NULL, NULL, NULL, $1, NULL, NULL, NULL);
+  // RETRY is transactional DML. The resolver supplies only the selected AI
+  // column's invalidation assignments; users cannot supply arbitrary writes.
+  // UPDATE_LIST is the target identifier rather than a user assignment list.
+  $7->value_ = 1;
   $$->value_ = 0;
 }
 ;

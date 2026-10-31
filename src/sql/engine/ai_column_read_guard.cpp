@@ -187,8 +187,8 @@ int AiColumnReadGuard::check(ObExecContext &context, const ObIArray<uint64_t> &r
         } else if (result.get_result() == nullptr) { ret = OB_ERR_UNEXPECTED; }
         else if (OB_ITER_END == (ret = result.get_result()->next())) { ret = OB_SUCCESS; }
         else if (OB_SUCC(ret)) {
-          ret = OB_STATE_NOT_MATCH;
-          LOG_USER_ERROR(OB_STATE_NOT_MATCH);
+          ret = OB_AI_COLUMN_UNFINISHED;
+          LOG_USER_ERROR(OB_AI_COLUMN_UNFINISHED, table->get_table_id(), column->get_column_id());
         }
       }
     }

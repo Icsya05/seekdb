@@ -178,8 +178,12 @@ int ObDDLResolver::validate_ai_column(ObColumnSchemaV2 &column, const ObTableSch
               ret = OB_INVALID_ARGUMENT;
             } else {
               const ObObj &value = static_cast<ObConstRawExpr *>(dim_expr)->get_value();
-              if (!value.is_int() || value.get_int() != dimension) {
+              if (!value.is_int()) {
                 ret = OB_INVALID_ARGUMENT;
+              } else if (value.get_int() != dimension) {
+                ret = OB_ERR_INVALID_VECTOR_DIM;
+                LOG_USER_ERROR(OB_ERR_INVALID_VECTOR_DIM,
+                    static_cast<unsigned>(dimension), static_cast<unsigned>(value.get_int()));
               }
             }
           }

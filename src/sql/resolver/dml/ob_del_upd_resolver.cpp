@@ -539,6 +539,16 @@ int ObDelUpdResolver::reset_ai_column(ObTableAssignment &assignments,
       } else if (OB_FAIL(ObRawExprUtils::build_column_conv_expr(*params_.expr_factory_,
                         *allocator_, *item->expr_, value, session_info_))) {
       } else {
+        if (field == AiColumnState::REQUEST) {
+          for (int64_t i = 0; i < assignments.assignments_.count(); ++i) {
+            const ObAssignment &previous = assignments.assignments_.at(i);
+            if (previous.is_implicit_ && previous.column_expr_->get_column_name().prefix_match("__ai_")
+                && previous.column_expr_->get_column_name().suffix_match("_request")) {
+              value = previous.expr_;
+              break;
+            }
+          }
+        }
         assignment.column_expr_ = item->expr_;
         assignment.expr_ = value;
         assignment.is_implicit_ = true;
@@ -1897,6 +1907,22 @@ int ObDelUpdResolver::generate_column_conv_function(ObInsertTableInfo &table_inf
       } else if (OB_FAIL(build_column_conv_function_with_value_desc(table_info, i, column_ref))) {
       }
     } //end for
+    const TableItem *target = del_upd_stmt->get_table_item_by_id(table_id);
+    const ObTableSchema *schema = nullptr;
+    ObRawExpr *request = nullptr;
+    if (OB_SUCC(ret) && target != nullptr && target->is_basic_table()) {
+      if (OB_FAIL(schema_checker_->get_table_schema(target->ref_id_, schema))) {
+      } else {
+        for (int64_t i = 0; OB_SUCC(ret) && i < table_info.column_exprs_.count(); ++i) {
+          const ObColumnSchemaV2 *column = schema->get_column_schema(table_info.column_exprs_.at(i)->get_column_id());
+          if (column != nullptr && column->is_ai_column_state()
+              && column->get_column_name_str().suffix_match("_request")) {
+            if (request == nullptr) { request = table_info.column_conv_exprs_.at(i); }
+            else { table_info.column_conv_exprs_.at(i) = request; }
+          }
+        }
+      }
+    }
   }
   return ret;
 }

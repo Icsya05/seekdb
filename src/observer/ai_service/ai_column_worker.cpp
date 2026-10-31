@@ -1,5 +1,6 @@
 #define USING_LOG_PREFIX SERVER_OMT
 #include "observer/ai_service/ai_column_worker.h"
+#include "sql/resolver/ai_column_expression.h"
 #include "share/ob_server_struct.h"
 #include "share/ob_share_util.h"
 #include "share/schema/ob_ai_column_schema.h"
@@ -77,75 +78,6 @@ int write_sql(const ObSqlString &query, int64_t &affected)
   return ret;
 }
 
-int print_argument(ObRawExpr *expr, ObSchemaGetterGuard &guard, ObIAllocator &allocator, ObSqlString &out)
-{
-  int ret = OB_SUCCESS;
-  constexpr int64_t capacity = 256 * 1024;
-  char *buffer = static_cast<char *>(allocator.alloc(capacity));
-  int64_t pos = 0;
-  if (OB_ISNULL(buffer)) {
-    ret = OB_ALLOCATE_MEMORY_FAILED;
-  } else {
-    ObRawExprPrinter printer(buffer, capacity, &pos, &guard);
-    if (OB_FAIL(printer.do_print(expr, T_NONE_SCOPE))) {
-    } else if (OB_FAIL(out.assign(buffer, pos))) {
-    }
-  }
-  return ret;
-}
-
-int model_expression(const ObColumnSchemaV2 &column, const ObTableSchema &table,
-                     ObSchemaGetterGuard &guard, ObIAllocator &allocator, ObSqlString &out)
-{
-  int ret = OB_SUCCESS;
-  ObRawExprFactory factory(allocator);
-  ObRawExpr *expr = nullptr;
-  const ParseNode *node = nullptr;
-  ObSEArray<ObQualifiedName, 4> refs;
-  SMART_VARS_3((ObSQLSessionInfo, session), (ObExecContext, context, allocator),
-               (ObPhysicalPlanCtx, plan, allocator)) {
-    LinkExecCtxGuard link(session, context);
-    context.set_my_session(&session);
-    context.set_physical_plan_ctx(&plan);
-    if (OB_FAIL(session.init(0, &allocator))) {
-    } else if (OB_FAIL(session.load_default_sys_variable(false, false))) {
-    } else if (OB_FAIL(ObRawExprUtils::parse_expr_node_from_str(column.get_ai_column_expr(),
-                        session.get_charsets4parser(), allocator, node))) {
-    } else if (OB_FAIL(ObRawExprUtils::build_generated_column_expr(factory, session, *node,
-                        expr, refs, nullptr, nullptr, nullptr, ObResolverUtils::DISABLE_CHECK))) {
-    }
-    for (int64_t i = 0; OB_SUCC(ret) && i < refs.count(); ++i) {
-      const ObColumnSchemaV2 *dependency = table.get_column_schema(refs.at(i).col_name_);
-      if (OB_ISNULL(dependency)) { ret = OB_SCHEMA_ERROR; }
-      else { ret = ObRawExprUtils::init_column_expr(*dependency, &session, *refs.at(i).ref_expr_); }
-    }
-    ObSqlString model, prompt, options;
-    if (OB_FAIL(ret)) {
-    } else if (OB_ISNULL(expr) || expr->get_param_count() < 2) {
-      ret = OB_SCHEMA_ERROR;
-    } else if (OB_FAIL(print_argument(expr->get_param_expr(0), guard, allocator, model))) {
-    } else if (OB_FAIL(print_argument(expr->get_param_expr(1), guard, allocator, prompt))) {
-    } else if (column.is_collection()) {
-      int64_t dimension = 0;
-      if (OB_FAIL(ObVectorIndexUtil::get_vector_dim_from_extend_type_info(column.get_extended_type_info(), dimension))) {
-      } else if (OB_FAIL(out.assign_fmt("AI_EMBED(%s,%s,%ld)", model.ptr(), prompt.ptr(), dimension))) {
-      }
-    } else {
-      const char *instruction = column.is_json() ? "Return only valid JSON, without markdown or explanation."
-          : ob_is_numeric_type(column.get_data_type()) ? "Return only a SQL number, without markdown or explanation."
-          : "Return only plain text, without markdown or explanation.";
-      if (expr->get_param_count() == 3) {
-        ret = print_argument(expr->get_param_expr(2), guard, allocator, options);
-      }
-      if (OB_SUCC(ret)) {
-        ret = out.assign_fmt("AI_COMPLETE(%s,CONCAT((%s),CHAR(10),'%s')%s%s)",
-            model.ptr(), prompt.ptr(), instruction, options.empty() ? "" : ",", options.empty() ? "" : options.ptr());
-      }
-    }
-    context.set_physical_plan_ctx(nullptr);
-  }
-  return ret;
-}
 
 int validate_result(const ObColumnSchemaV2 &column, const ObObj &value,
                     ObIAllocator &allocator, ObSqlString &out)
@@ -279,10 +211,11 @@ int AiColumnWorker::process_table(uint64_t table_id, bool &did_work)
       }
     }
     if (OB_SUCC(ret)) {
-      ret = eligible.append_fmt("%s((%s='PENDING' OR %s<>%ld) AND %s<%ld)",
+      ret = eligible.append_fmt("%s((%s='PENDING' OR %s<>%ld) AND %s<%ld AND %s<=%ld)",
           eligible.empty() ? "" : " OR ", task->field_[AiColumnState::STATUS].ptr(),
           task->field_[AiColumnState::VERSION].ptr(), column->get_ai_column_version(),
-          task->field_[AiColumnState::LEASE].ptr(), now);
+          task->field_[AiColumnState::LEASE].ptr(), now,
+          task->field_[AiColumnState::ELIGIBLE].ptr(), now);
     }
   }
   if (OB_SUCC(ret) && tasks.empty()) { ret = OB_ITER_END; }
@@ -318,13 +251,14 @@ int AiColumnWorker::process_table(uint64_t table_id, bool &did_work)
       ColumnTask &t = *tasks.at(i);
       const int64_t offset = 1 + keys.count() + i * AiColumnState::FIELD_COUNT;
       ObString status, request;
-      int64_t lease = 0, version = 0;
+      int64_t lease = 0, version = 0, eligible_time = 0;
       if (OB_FAIL(row->get_varchar(offset, status))) {
       } else if (OB_FAIL(row->get_varchar(offset + 1, request))) {
       } else if (OB_FAIL(row->get_int(offset + AiColumnState::LEASE, lease))) {
       } else if (OB_FAIL(row->get_int(offset + AiColumnState::ATTEMPTS, t.attempts_))) {
       } else if (OB_FAIL(row->get_int(offset + AiColumnState::VERSION, version))) {
-      } else if (lease < now && (status == "PENDING" || version != t.column_->get_ai_column_version())) {
+      } else if (OB_FAIL(row->get_int(offset + AiColumnState::ELIGIBLE, eligible_time))) {
+      } else if (lease < now && eligible_time <= now && (status == "PENDING" || version != t.column_->get_ai_column_version())) {
         t.selected_ = true;
         if (version != t.column_->get_ai_column_version()) { t.attempts_ = 0; }
         if (OB_FAIL(literal(t.request_, request))) {
@@ -366,7 +300,7 @@ int AiColumnWorker::process_table(uint64_t table_id, bool &did_work)
   for (int64_t i = 0; OB_SUCC(ret) && !has_set_stop() && i < tasks.count(); ++i) {
     ColumnTask &t = *tasks.at(i);
     if (!t.selected_) { continue; }
-    const int expr_ret = model_expression(*t.column_, *table, guard, allocator, t.expression_);
+    const int expr_ret = AiColumnExpression::normalize(*t.column_, *table, guard, allocator, t.expression_);
     if (expr_ret != OB_SUCCESS) { t.attempts_ = t.column_->get_ai_column_max_retries() + 1; }
     while (OB_SUCC(ret) && !has_set_stop() && !t.ready_ && t.attempts_ <= t.column_->get_ai_column_max_retries()) {
       ObSqlString renew, query;
@@ -377,8 +311,9 @@ int AiColumnWorker::process_table(uint64_t table_id, bool &did_work)
       }
       ++t.attempts_;
       if (OB_FAIL(ret)) {
-      } else if (OB_FAIL(query.assign_fmt("UPDATE %s SET %s,%s=%ld WHERE %s", table_name.ptr(), renew.ptr(),
-                   t.field_[AiColumnState::ATTEMPTS].ptr(), t.attempts_, where.ptr()))) {
+      } else if (OB_FAIL(query.assign_fmt("UPDATE %s SET %s,%s=%ld,%s=2 WHERE %s", table_name.ptr(), renew.ptr(),
+                   t.field_[AiColumnState::ATTEMPTS].ptr(), t.attempts_,
+                   t.field_[AiColumnState::TASK_STATE].ptr(), where.ptr()))) {
       } else if (OB_FAIL(write_sql(query, affected))) {
       } else if (affected != 1) { ret = OB_ITER_END; }
       else if (OB_FAIL(query.assign_fmt("SELECT CAST(%s AS CHAR) FROM %s WHERE %s",
@@ -400,7 +335,17 @@ int AiColumnWorker::process_table(uint64_t table_id, bool &did_work)
         }
         t.ready_ = call_ret == OB_SUCCESS;
       }
-      if (!t.ready_ && OB_SUCC(ret) && t.attempts_ <= t.column_->get_ai_column_max_retries()) { ob_usleep(100 * 1000); }
+      if (!t.ready_ && OB_SUCC(ret) && t.attempts_ <= t.column_->get_ai_column_max_retries()) {
+        const int64_t eligible_time = ObTimeUtility::current_time() + 1000 * 1000;
+        if (OB_FAIL(query.assign_fmt("UPDATE %s SET %s=3,%s=%ld,%s=%ld WHERE %s", table_name.ptr(),
+                       t.field_[AiColumnState::TASK_STATE].ptr(), t.field_[AiColumnState::RETRIES].ptr(),
+                       t.attempts_, t.field_[AiColumnState::ELIGIBLE].ptr(), eligible_time, where.ptr()))) {
+        } else if (OB_FAIL(write_sql(query, affected))) {
+        } else if (affected != 1) { ret = OB_ITER_END; }
+        while (OB_SUCC(ret) && !has_set_stop() && ObTimeUtility::current_time() < eligible_time) {
+          ob_usleep(50 * 1000);
+        }
+      }
     }
     if (OB_SUCC(ret)) {
       if (OB_FAIL(publish.append(publish.empty() ? "" : ","))) {

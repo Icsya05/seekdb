@@ -1337,13 +1337,30 @@ int ObAIFuncModel::call_completion(ObString &prompt, ObJsonObject *config, ObStr
   client.set_max_concurrency(endpoint_info_.get_effective_max_concurrency());
   ObString unencrypted_access_key;
   ObString request_model_name = get_request_model_name();
-  if (!is_completion_type()) {
+  ObJsonObject *provider_config = nullptr;
+  if (config != nullptr) {
+    if (OB_FAIL(ObAIFuncJsonUtils::get_json_object(*allocator_, provider_config))) {
+    } else {
+      for (int64_t i = 0; OB_SUCC(ret) && i < config->element_count(); ++i) {
+        ObString key;
+        ObJsonNode *value = config->get_value(i);
+        if (OB_FAIL(config->get_key(i, key))) {
+        } else if (key == "system_prompt") {
+          if (value == nullptr || value->json_type() != ObJsonNodeType::J_STRING) { ret = OB_INVALID_ARGUMENT; }
+          else { prompt_str = static_cast<ObJsonString *>(value)->value(); }
+        } else if (OB_FAIL(provider_config->add(key, value))) {
+        }
+      }
+    }
+  }
+  if (OB_FAIL(ret)) {
+  } else if (!is_completion_type()) {
     ret = OB_INVALID_ARGUMENT;
     LOG_USER_ERROR(OB_INVALID_ARGUMENT, "ai_complete, info type is not completion");
   } else if (OB_FAIL(ObAIFuncUtils::get_complete_provider(*allocator_, endpoint_info_.get_provider(), complete_provider))) {
   } else if (OB_FAIL(endpoint_info_.get_unencrypted_access_key(*allocator_, unencrypted_access_key))) {
   } else if (OB_FAIL(complete_provider->get_header(*allocator_, unencrypted_access_key, headers))) {
-  } else if (OB_FAIL(complete_provider->get_body(*allocator_, request_model_name, prompt_str, prompt, config, body))) {
+  } else if (OB_FAIL(complete_provider->get_body(*allocator_, request_model_name, prompt_str, prompt, provider_config, body))) {
   } else if (OB_FAIL(client.send_post(*allocator_, endpoint_info_.get_url(), headers, body, response))) {
   } else if (OB_FAIL(complete_provider->parse_output(*allocator_, response, result_base))) {
   } else if (OB_FAIL(ObAIFuncJsonUtils::print_json_to_str(*allocator_, result_base, result_str))) {

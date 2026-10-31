@@ -195,12 +195,15 @@ int ObUpdateResolver::resolve_ai_column_retry(const ParseNode &parse_tree,
   if (OB_ISNULL(stmt) || OB_ISNULL(name) || stmt->get_table_items().count() != 1
       || OB_ISNULL(table = stmt->get_table_items().at(0)) || !table->is_basic_table()) {
     ret = OB_INVALID_ARGUMENT;
+  } else if (name->value_ == 1) {
+    ret = OB_NOT_SUPPORTED;
+    LOG_USER_ERROR(OB_NOT_SUPPORTED, "combining AI COLUMN RETRY with another ALTER action");
   } else if (OB_FAIL(schema_checker_->get_table_schema(table->ref_id_, schema))) {
   } else if (OB_ISNULL(schema) || !schema->is_user_table()
       || OB_ISNULL(column = schema->get_column_schema(ObString(name->str_len_, name->str_value_)))
       || !column->is_ai_column()) {
-    ret = OB_INVALID_ARGUMENT;
-    LOG_USER_ERROR(OB_INVALID_ARGUMENT, "RETRY AI COLUMN requires an AI column of a base table");
+    ret = OB_NOT_SUPPORTED;
+    LOG_USER_ERROR(OB_NOT_SUPPORTED, "retrying a column that is not an AI column");
   } else if (OB_FAIL(AiColumnState::name(column->get_column_id(), AiColumnState::STATUS, state_name))) {
   } else if (OB_FAIL(ob_write_string(*allocator_, state_name.string(), persistent_name))) {
   } else if (OB_FAIL(bind_ai_retry_status(parse_tree.children_[WHERE], persistent_name))) {

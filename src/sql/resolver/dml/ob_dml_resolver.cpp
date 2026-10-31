@@ -1836,6 +1836,7 @@ int ObDMLResolver::resolve_basic_column_item(const TableItem &table_item,
   ObColumnRefRawExpr *col_expr = NULL;
   ObSchemaGetterGuard *schema_guard = NULL;
   ColumnItem column_item;
+  include_hidden |= params_.is_resolving_ai_catalog_;
   if (NULL == stmt) {
     stmt = get_stmt();
   }
@@ -2379,6 +2380,11 @@ int ObDMLResolver::resolve_basic_table_without_cte(const ParseNode &parse_tree, 
       alias_name.assign_ptr(alias_node->str_value_, static_cast<int32_t>(alias_node->str_len_));
     }
 
+    if (database_name.case_compare("oceanbase") == 0
+        && (table_name.case_compare("__all_ai_column") == 0
+            || table_name.case_compare("__all_ai_column_task") == 0)) {
+      return resolve_ai_column_catalog(database_name, table_name, alias_name, table_item);
+    }
     // flag IS to set larger query_timeout.
     if (is_information_schema_database_id(database_id)) {
       params_.query_ctx_->has_is_table_ = true;

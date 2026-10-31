@@ -14,7 +14,7 @@ namespace schema
 class AiColumnState
 {
 public:
-  enum Field { STATUS, REQUEST, OWNER, LEASE, ATTEMPTS, VERSION, FIELD_COUNT };
+  enum Field { STATUS, REQUEST, OWNER, LEASE, ATTEMPTS, VERSION, ELIGIBLE, RETRIES, TASK_STATE, FIELD_COUNT };
 
   static bool depends_on(const ObColumnSchemaV2 &column, uint64_t id)
   {
@@ -33,7 +33,7 @@ public:
 
   static int name(uint64_t column_id, Field field, common::ObSqlString &out)
   {
-    static const char *suffix[] = {"status", "request", "owner", "lease", "attempts", "version"};
+    static const char *suffix[] = {"status", "request", "owner", "lease", "attempts", "version", "eligible", "retries", "task_state"};
     int ret = common::OB_SUCCESS;
     if (field < STATUS || field >= FIELD_COUNT) {
       ret = common::OB_INVALID_ARGUMENT;
@@ -62,7 +62,7 @@ public:
       if (field >= LEASE) {
         out.set_data_type(ObIntType);
         out.set_accuracy(ObAccuracy::DDL_DEFAULT_ACCURACY[ObIntType]);
-        value.set_int(0);
+        value.set_int(field == TASK_STATE ? 1 : 0);
       } else {
         out.set_data_type(ObVarcharType);
         out.set_data_length(64);
@@ -73,6 +73,10 @@ public:
       }
       if (OB_FAIL(out.set_orig_default_value(value))) {
       } else if (OB_FAIL(out.set_cur_default_value(value, false))) {
+      }
+      if (OB_SUCC(ret) && field == ELIGIBLE) {
+        value.set_varchar("CAST(UNIX_TIMESTAMP(NOW(6))*1000000 AS SIGNED)");
+        ret = out.set_cur_default_value(value, true);
       }
       if (OB_SUCC(ret) && field == REQUEST) {
         // New inserts receive a different identity even after DELETE/reinsert

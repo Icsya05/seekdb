@@ -375,6 +375,7 @@ struct ObResolverParams
        is_specified_col_name_(false),
        is_in_sys_view_(false),
        is_expanding_view_(false),
+       is_resolving_ai_catalog_(false),
        is_resolve_lateral_derived_table_(false),
        package_guard_(NULL),
        star_expansion_infos_(),
@@ -450,6 +451,7 @@ public:
   bool is_specified_col_name_;//mark if specify the column name in create view or create table as..
   bool is_in_sys_view_;
   bool is_expanding_view_;
+  bool is_resolving_ai_catalog_;
   bool is_resolve_lateral_derived_table_; // used to mark resolve lateral derived table.
   pl::ObPLPackageGuard *package_guard_;
   common::ObArray<ObStarExpansionInfo> star_expansion_infos_;
