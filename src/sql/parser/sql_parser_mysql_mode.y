@@ -14775,7 +14775,8 @@ alter_with_opt_hint TABLE relation_factor alter_table_actions
                           NULL, tables, $7, $8, NULL, NULL, NULL, $1, NULL, NULL, NULL);
   // RETRY is transactional DML. The resolver supplies only the selected AI
   // column's invalidation assignments; users cannot supply arbitrary writes.
-  $$->value_ = 1;
+  // UPDATE_LIST is the target identifier rather than a user assignment list.
+  $$->value_ = 0;
 }
 ;
 

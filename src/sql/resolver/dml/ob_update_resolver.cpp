@@ -82,7 +82,7 @@ int ObUpdateResolver::resolve(const ParseNode &parse_tree)
     current_scope_ = T_UPDATE_SCOPE;
     // resolve assignments
     ParseNode *assign_list = parse_tree.children_[UPDATE_LIST];
-    if (parse_tree.value_ == 1) {
+    if (assign_list != nullptr && assign_list->type_ == T_IDENT) {
       ret = resolve_ai_column_retry(parse_tree, tables_assign);
     } else if (OB_ISNULL(assign_list) || OB_UNLIKELY(T_ASSIGN_LIST != assign_list->type_)) {
       ret = OB_ERR_UNEXPECTED;
