@@ -3,6 +3,9 @@ seekdb_apply_standalone_inventory(ob_sql SEEKDB_SQL_STANDALONE)
 seekdb_apply_standalone_inventory(ob_sql_extra SEEKDB_SQL_EXTRA)
 
 ob_add_new_object_target(ob_sql ob_sql)
+target_sources(ob_sql PRIVATE
+  engine/basic/ob_file_scan.cpp
+  resolver/dml/ob_file_table_resolver.cpp)
 ob_add_new_object_target(ob_sql_extra ob_sql_extra)
 target_link_libraries(ob_sql PUBLIC ob_base config)
 target_link_libraries(ob_sql_extra PUBLIC ob_base_without_pass config)
