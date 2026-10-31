@@ -14762,6 +14762,21 @@ alter_with_opt_hint TABLE relation_factor alter_table_actions
   malloc_non_terminal_node($$, result->malloc_pool_, T_ALTER_TABLE, 4, $3, table_actions, NULL, $1);
   $$->value_ = 0;
 }
+| alter_with_opt_hint TABLE relation_factor NAME_OB AI COLUMN column_name opt_where
+{
+  (void)($5);
+  if ($4->str_len_ != 5 || strncasecmp($4->str_value_, "retry", 5) != 0 || $4->is_input_quoted_) {
+    yyerror(&@4, result, "expected RETRY AI COLUMN");
+    YYERROR;
+  }
+  ParseNode *tables = NULL;
+  malloc_non_terminal_node(tables, result->malloc_pool_, T_TABLE_REFERENCES, 1, $3);
+  malloc_non_terminal_node($$, result->malloc_pool_, T_UPDATE, 11,
+                          NULL, tables, $7, $8, NULL, NULL, NULL, $1, NULL, NULL, NULL);
+  // RETRY is transactional DML. The resolver supplies only the selected AI
+  // column's invalidation assignments; users cannot supply arbitrary writes.
+  $$->value_ = 1;
+}
 ;
 
 

@@ -74,6 +74,8 @@ protected:
                                      const ObStmtScope scope);
   int invalidate_ai_columns(ObTableAssignment &assignments, const TableItem &table,
                              const share::schema::ObTableSchema &schema);
+  int reset_ai_column(ObTableAssignment &assignments, const TableItem &table,
+                      const share::schema::ObColumnSchemaV2 &column);
   int generate_wrapper_expr_for_assignemnts(common::ObIArray<ObAssignment> &assigns,
                                             bool has_before_trigger);
 

@@ -506,35 +506,43 @@ int ObDelUpdResolver::invalidate_ai_columns(ObTableAssignment &assignments,
       ret = OB_NOT_SUPPORTED;
       LOG_USER_ERROR(OB_NOT_SUPPORTED, "updating AI COLUMN inputs through a view");
     }
-    // NULL the result and reset every queue field in the same native DML row.
-    // Vector index maintenance sees the NULL assignment before it derives its deltas.
-    for (int field = -1; OB_SUCC(ret) && field < AiColumnState::FIELD_COUNT; ++field) {
-      ObSqlString name;
-      ColumnItem *item = nullptr;
-      ObAssignment assignment;
-      ObRawExpr *value = nullptr;
-      if (field == -1) {
-        ret = name.assign(col->get_column_name_str());
-      } else {
-        ret = AiColumnState::name(col->get_column_id(), static_cast<AiColumnState::Field>(field), name);
+    if (OB_SUCC(ret)) { ret = reset_ai_column(assignments, table, *col); }
+  }
+  return ret;
+}
+
+int ObDelUpdResolver::reset_ai_column(ObTableAssignment &assignments,
+                                    const TableItem &table, const ObColumnSchemaV2 &column)
+{
+  int ret = OB_SUCCESS;
+  // NULL the result and reset every queue field in the same native DML row.
+  // Vector index maintenance sees the NULL assignment before deriving its deltas.
+  for (int field = -1; OB_SUCC(ret) && field < AiColumnState::FIELD_COUNT; ++field) {
+    ObSqlString name;
+    ColumnItem *item = nullptr;
+    ObAssignment assignment;
+    ObRawExpr *value = nullptr;
+    if (field == -1) {
+      ret = name.assign(column.get_column_name_str());
+    } else {
+      ret = AiColumnState::name(column.get_column_id(), static_cast<AiColumnState::Field>(field), name);
+    }
+    if (OB_FAIL(ret)) {
+    } else if (OB_FAIL(resolve_basic_column_item(table, name.string(), true, item))) {
+    } else if (field == -1 && OB_FAIL(ObRawExprUtils::build_null_expr(*params_.expr_factory_, value))) {
+    } else {
+      if (field >= 0) {
+        ObDefaultValueUtils defaults(get_stmt(), &params_, this);
+        ret = defaults.resolve_default_expr(*item, value, T_UPDATE_SCOPE);
       }
       if (OB_FAIL(ret)) {
-      } else if (OB_FAIL(resolve_basic_column_item(table, name.string(), true, item))) {
-      } else if (field == -1 && OB_FAIL(ObRawExprUtils::build_null_expr(*params_.expr_factory_, value))) {
+      } else if (OB_FAIL(ObRawExprUtils::build_column_conv_expr(*params_.expr_factory_,
+                        *allocator_, *item->expr_, value, session_info_))) {
       } else {
-        if (field >= 0) {
-          ObDefaultValueUtils defaults(get_stmt(), &params_, this);
-          ret = defaults.resolve_default_expr(*item, value, T_UPDATE_SCOPE);
-        }
-        if (OB_FAIL(ret)) {
-        } else if (OB_FAIL(ObRawExprUtils::build_column_conv_expr(*params_.expr_factory_,
-                          *allocator_, *item->expr_, value, session_info_))) {
-        } else {
-          assignment.column_expr_ = item->expr_;
-          assignment.expr_ = value;
-          assignment.is_implicit_ = true;
-          ret = assignments.assignments_.push_back(assignment);
-        }
+        assignment.column_expr_ = item->expr_;
+        assignment.expr_ = value;
+        assignment.is_implicit_ = true;
+        ret = assignments.assignments_.push_back(assignment);
       }
     }
   }
