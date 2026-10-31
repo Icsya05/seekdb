@@ -263,13 +263,16 @@ int AiColumnWorker::process_table(uint64_t table_id, bool &did_work)
         t.selected_ = true;
         if (version != t.column_->get_ai_column_version()) { t.attempts_ = 0; }
         if (OB_FAIL(literal(t.request_, request))) {
-        } else if (OB_FAIL(claim.append_fmt("%s%s=%s,%s=%ld,%s=%ld,%s=%ld,%s='PENDING',",
+        } else if (OB_FAIL(claim.append_fmt("%s%s=%s,%s=%ld,%s=%ld,%s=%ld,%s='PENDING'",
                     claim.empty() ? "" : ",", t.field_[AiColumnState::OWNER].ptr(), owner.ptr(),
                     t.field_[AiColumnState::LEASE].ptr(), now + LEASE_US,
                     t.field_[AiColumnState::VERSION].ptr(), t.column_->get_ai_column_version(),
                     t.field_[AiColumnState::ATTEMPTS].ptr(), t.attempts_, t.field_[AiColumnState::STATUS].ptr()))) {
-        } else if (OB_FAIL(identifier(claim, t.column_->get_column_name_str()))) {
-        } else if (OB_FAIL(claim.append("=NULL"))) {
+        // Business DML already invalidates PENDING results. Assigning NULL again
+        // would create needless vector index versions on every ownership claim.
+        } else if (status != "PENDING" && OB_FAIL(claim.append(","))) {
+        } else if (status != "PENDING" && OB_FAIL(identifier(claim, t.column_->get_column_name_str()))) {
+        } else if (status != "PENDING" && OB_FAIL(claim.append("=NULL"))) {
         } else if (OB_FAIL(where.append_fmt(" AND %s=%s AND %s<%ld AND %s=%ld AND %s=",
                     t.field_[AiColumnState::REQUEST].ptr(), t.request_.ptr(),
                     t.field_[AiColumnState::LEASE].ptr(), now,
