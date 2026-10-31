@@ -4912,7 +4912,7 @@ ai_column_option { $$ = $1; }
 { malloc_non_terminal_node($$, result->malloc_pool_, T_LINK_NODE, 2, $1, $3); }
 ;
 ai_column_option:
-relation_name '=' expr
+relation_name COMP_EQ expr
 { malloc_non_terminal_node($$, result->malloc_pool_, T_ASSIGN_ITEM, 2, $1, $3); }
 ;
 

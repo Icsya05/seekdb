@@ -80,7 +80,7 @@ int ObDDLResolver::resolve_ai_column_definition(ObColumnSchemaV2 &column, const 
         }
       } else if (key.case_compare("max_retries") == 0 && !seen_retries) {
         seen_retries = true;
-        if (value.type_ != T_INT || value.value_ < 0 || value.value_ > 10) {
+        if (value.type_ != T_INT || value.value_ < 0 || value.value_ > INT32_MAX) {
           ret = OB_INVALID_ARGUMENT;
         } else {
           column.set_ai_column_max_retries(value.value_);
@@ -89,7 +89,7 @@ int ObDDLResolver::resolve_ai_column_definition(ObColumnSchemaV2 &column, const 
         ret = OB_INVALID_ARGUMENT;
       }
       if (ret == OB_INVALID_ARGUMENT) {
-        LOG_USER_ERROR(OB_INVALID_ARGUMENT, "AI COLUMN options: sync_mode='async', max_retries integer 0..10; no duplicates");
+        LOG_USER_ERROR(OB_INVALID_ARGUMENT, "AI COLUMN options: sync_mode='async', max_retries nonnegative int32; no duplicates");
       }
     }
   }
@@ -125,6 +125,7 @@ int ObDDLResolver::validate_ai_column(ObColumnSchemaV2 &column, const ObTableSch
   for (int64_t i = 0; OB_SUCC(ret) && i < expr->get_param_count(); ++i) {
     if (OB_FAIL(ObRawExprUtils::check_deterministic(expr->get_param_expr(i), *allocator_,
                                                    ObResolverUtils::CHECK_FOR_GENERATED_COLUMN))) {
+    } else if (OB_FAIL(ObRawExprUtils::check_is_valid_generated_col(expr->get_param_expr(i), *allocator_))) {
     }
   }
   for (int64_t i = 0; OB_SUCC(ret) && i < refs.count(); ++i) {
