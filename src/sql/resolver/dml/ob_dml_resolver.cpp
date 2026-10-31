@@ -6641,6 +6641,10 @@ int ObDMLResolver::resolve_table_relation_factor_normal(const ParseNode *node,
     if (OB_SCHEMA_EAGAIN != ret) {
       ret = OB_ERR_BAD_DATABASE;
     }
+  } else if (db_name.case_compare("oceanbase") == 0
+      && (table_name.case_compare("__all_ai_column") == 0
+          || table_name.case_compare("__all_ai_column_task") == 0)) {
+    // Native AI catalogs are expanded by resolve_basic_table_without_cte.
   } else if (OB_FAIL(check_table_exist_or_not(database_id, table_name, db_name))) {
   }
 

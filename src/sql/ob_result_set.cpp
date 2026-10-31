@@ -463,7 +463,8 @@ OB_INLINE int ObResultSet::do_open_plan(ObExecContext &ctx)
 
   if (OB_FAIL(ret)) {
   } else if (OB_FAIL(start_stmt())) {
-  } else if (OB_FAIL(AiColumnReadGuard::check(ctx, physical_plan_->get_ai_column_refs()))) {
+  } else if (stmt::T_PREPARE != stmt_type_
+             && OB_FAIL(AiColumnReadGuard::check(ctx, physical_plan_->get_ai_column_refs()))) {
   } else {
     /* Set exec_result_ to the executor's runtime environment for returning data */
     /* execute plan,
