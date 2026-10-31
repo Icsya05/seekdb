@@ -19,6 +19,7 @@
 #include "config_bridge.h"
 #include "lib/compress/ob_compress_util.h"
 #include "ob_ddl_common.h"
+#include "share/schema/ob_ai_column_schema.h"
 #include "common/datum/ob_datum.h"  // ObDatum complete type(previously hidden behind the block_sstable_struct include chain)
 #include "share/ob_rpc_struct.h"
 #include "share/system_variable/ob_system_variable_alias.h"
@@ -283,6 +284,31 @@ int ObColumnNameMap::init(const ObTableSchema &orig_table_schema,
           break;
         }
         }
+      }
+    }
+  }
+  // Offline rebuilds renumber columns and implicitly rename AI state fields.
+  // Include these renames in the row-copy and checksum mapping.
+  for (ObTableSchema::const_column_iterator it = orig_table_schema.column_begin();
+       OB_SUCC(ret) && it != orig_table_schema.column_end(); ++it) {
+    const ObColumnSchemaV2 *column = *it;
+    if (column == nullptr || !column->is_ai_column() || column->is_unused()) { continue; }
+    ObString new_owner_name;
+    const ObColumnSchemaV2 *new_owner = nullptr;
+    if (OB_FAIL(get(column->get_column_name_str(), new_owner_name))) {
+      if (ret == OB_HASH_NOT_EXIST) { ret = OB_SUCCESS; continue; }
+    } else if ((new_owner = new_table_schema.get_column_schema(new_owner_name)) == nullptr) {
+      ret = OB_SCHEMA_ERROR;
+    }
+    for (int f = 0; OB_SUCC(ret) && f < AiColumnState::FIELD_COUNT; ++f) {
+      ObSqlString old_name, new_name;
+      if (OB_FAIL(AiColumnState::name(column->get_column_id(), static_cast<AiColumnState::Field>(f), old_name))) {
+      } else if (OB_FAIL(AiColumnState::name(new_owner->get_column_id(), static_cast<AiColumnState::Field>(f), new_name))) {
+      } else if (old_name.string() == new_name.string()) {
+      } else if (new_table_schema.get_column_schema(new_name.string()) == nullptr) {
+        ret = OB_SCHEMA_ERROR;
+      } else if (OB_FAIL(col_name_map_.erase_refactored(ObColumnNameHashWrapper(old_name.string())))) {
+      } else if (OB_FAIL(set(old_name.string(), new_name.string()))) {
       }
     }
   }
