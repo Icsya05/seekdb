@@ -16,6 +16,7 @@
 
 #define USING_LOG_PREFIX RS
 
+#include "share/schema/ob_ai_column_schema.h"
 #include "share/rc/ob_server_runtime.h"
 #include "config_bridge.h"
 #include <algorithm>
@@ -7827,6 +7828,20 @@ int ObDDLService::add_new_column_to_table_schema(
       if (update_inner_table) {
         if (OB_FAIL(ddl_operator->insert_single_column(*trans,
                 new_table_schema, alter_column_schema))) {
+        }
+      }
+    }
+  }
+  if (OB_SUCC(ret) && alter_column_schema.is_ai_column()) {
+    for (int field = 0; OB_SUCC(ret) && field < AiColumnState::FIELD_COUNT; ++field) {
+      AlterColumnSchema state;
+      if (OB_FAIL(AiColumnState::build(alter_column_schema, static_cast<AiColumnState::Field>(field),
+                                       new_table_schema.get_max_used_column_id() + 1, state))) {
+      } else {
+        state.alter_type_ = OB_DDL_ADD_COLUMN;
+        if (OB_FAIL(add_new_column_to_table_schema(origin_table_schema, alter_table_schema,
+                       tz_info_wrap, local_session_var, allocator, new_table_schema, state,
+                       gen_col_expr_arr, schema_guard, curr_udt_set_id, ddl_operator, trans))) {
         }
       }
     }

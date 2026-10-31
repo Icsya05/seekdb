@@ -16,6 +16,7 @@
 
 #define USING_LOG_PREFIX SQL_RESV
 #include "ob_del_upd_resolver.h"
+#include "share/schema/ob_ai_column_schema.h"
 #include "sql/resolver/dml/ob_default_value_utils.h"
 #include "sql/resolver/dml/ob_update_stmt.h"
 #include "sql/resolver/dml/ob_insert_stmt.h"
@@ -90,7 +91,10 @@ int ObDelUpdResolver::resolve_assignments(const ParseNode &parse_node,
     for (int64_t i = 0; OB_SUCC(ret) && i < column_list.count(); i++) {
       // process column
       ObColumnRefRawExpr *ref_expr = column_list.at(i);
-      if (OB_ISNULL(column = stmt->get_column_item_by_id(
+      if (session_info_->is_user_session() && (ref_expr->get_column_flags() & (AI_COLUMN_FLAG | AI_COLUMN_STATE_FLAG))) {
+        ret = OB_NOT_SUPPORTED;
+        LOG_USER_ERROR(OB_NOT_SUPPORTED, "direct assignment to an AI COLUMN or its task state");
+      } else if (OB_ISNULL(column = stmt->get_column_item_by_id(
                         ref_expr->get_table_id(), ref_expr->get_column_id()))) {
         ret = OB_ERR_UNEXPECTED;
       } else if (OB_ISNULL(table = stmt->get_table_item_by_id(
@@ -481,6 +485,62 @@ int ObDelUpdResolver::check_update_vector_col_with_vector_index(const ObTableSch
   return ret;
 }
 
+int ObDelUpdResolver::invalidate_ai_columns(ObTableAssignment &assignments,
+                                           const TableItem &table,
+                                           const ObTableSchema &schema)
+{
+  int ret = OB_SUCCESS;
+  const int64_t explicit_count = assignments.assignments_.count();
+  for (int64_t i = 0; OB_SUCC(ret) && session_info_->is_user_session() && i < schema.get_column_count(); ++i) {
+    const ObColumnSchemaV2 *col = schema.get_column_schema_by_idx(i);
+    if (!col->is_ai_column()) { continue; }
+    bool affected = false;
+    for (int64_t j = 0; j < explicit_count && !affected; ++j) {
+      const ObColumnRefRawExpr *ref = assignments.assignments_.at(j).column_expr_;
+      const ObColumnSchemaV2 *assigned = schema.get_column_schema(ref->get_column_id());
+      affected = (assigned != nullptr && assigned->is_rowkey_column())
+          || AiColumnState::depends_on(*col, ref->get_column_id());
+    }
+    if (!affected) { continue; }
+    if (!table.is_basic_table()) {
+      ret = OB_NOT_SUPPORTED;
+      LOG_USER_ERROR(OB_NOT_SUPPORTED, "updating AI COLUMN inputs through a view");
+    }
+    // NULL the result and reset every queue field in the same native DML row.
+    // Vector index maintenance sees the NULL assignment before it derives its deltas.
+    for (int field = -1; OB_SUCC(ret) && field < AiColumnState::FIELD_COUNT; ++field) {
+      ObSqlString name;
+      ColumnItem *item = nullptr;
+      ObAssignment assignment;
+      ObRawExpr *value = nullptr;
+      if (field == -1) {
+        ret = name.assign(col->get_column_name_str());
+      } else {
+        ret = AiColumnState::name(col->get_column_id(), static_cast<AiColumnState::Field>(field), name);
+      }
+      if (OB_FAIL(ret)) {
+      } else if (OB_FAIL(resolve_basic_column_item(table, name.string(), true, item))) {
+      } else if (field == -1 && OB_FAIL(ObRawExprUtils::build_null_expr(*params_.expr_factory_, value))) {
+      } else {
+        if (field >= 0) {
+          ObDefaultValueUtils defaults(get_stmt(), &params_, this);
+          ret = defaults.resolve_default_expr(*item, value, T_UPDATE_SCOPE);
+        }
+        if (OB_FAIL(ret)) {
+        } else if (OB_FAIL(ObRawExprUtils::build_column_conv_expr(*params_.expr_factory_,
+                          *allocator_, *item->expr_, value, session_info_))) {
+        } else {
+          assignment.column_expr_ = item->expr_;
+          assignment.expr_ = value;
+          assignment.is_implicit_ = true;
+          ret = assignments.assignments_.push_back(assignment);
+        }
+      }
+    }
+  }
+  return ret;
+}
+
 int ObDelUpdResolver::resolve_additional_assignments(ObIArray<ObTableAssignment> &assigns,
                                                      const ObStmtScope scope)
 {
@@ -512,6 +572,7 @@ int ObDelUpdResolver::resolve_additional_assignments(ObIArray<ObTableAssignment>
       ret = OB_ERR_UNEXPECTED;
       LOG_WARN("fail to get table schema", KPC(table_item), K(table_schema));
     } else if (OB_FAIL(table_schema->has_before_update_row_trigger(*schema_guard, trigger_exist))) {
+    } else if (OB_FAIL(invalidate_ai_columns(assigns.at(i), *table_item, *table_schema))) {
     } else if (OB_FAIL(generate_wrapper_expr_for_assignemnts(assigns.at(i).assignments_, trigger_exist))) {
     } else if (OB_FAIL(check_update_vector_col_with_vector_index(table_schema,
                                                                  schema_guard,
@@ -2158,6 +2219,10 @@ int ObDelUpdResolver::resolve_insert_columns(const ParseNode *node,
         ret = OB_ERR_UNEXPECTED;
       } else if (FALSE_IT(column_expr = static_cast<ObColumnRefRawExpr*>(ref_expr))) {
         //do nothing
+      } else if (session_info_->is_user_session()
+                 && (column_expr->get_column_flags() & (AI_COLUMN_FLAG | AI_COLUMN_STATE_FLAG))) {
+        ret = OB_NOT_SUPPORTED;
+        LOG_USER_ERROR(OB_NOT_SUPPORTED, "explicit INSERT into an AI COLUMN or its task state");
       } else if (OB_FAIL(check_insert_column_duplicate(column_expr->get_column_id(), is_duplicate))) {
       } else if (is_duplicate) {
         ret = OB_ERR_FIELD_SPECIFIED_TWICE;
@@ -2192,6 +2257,9 @@ int ObDelUpdResolver::resolve_insert_columns(const ParseNode *node,
     if (OB_SUCC(ret)) {
       int64_t N = column_items.count();
       for (int64_t i = 0; OB_SUCC(ret) && i < N; i++) {
+        if (session_info_->is_user_session() && (column_items.at(i).expr_->get_column_flags() & AI_COLUMN_FLAG)) {
+          continue;
+        }
         uint64_t column_id = column_items.at(i).column_id_;
         bool is_duplicate = false;
         if (OB_FAIL(check_insert_column_duplicate(column_id, is_duplicate))) {
