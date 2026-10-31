@@ -12746,6 +12746,7 @@ SHOW opt_extended_or_full TABLES opt_from_or_in_database_clause opt_show_conditi
 }
 | SHOW NAME_OB COLUMNS from_or_in relation_factor opt_from_or_in_database_clause opt_show_condition
 {
+  (void)$4;
   if ($2->str_len_ != 2 || strncasecmp($2->str_value_, "ai", 2) != 0) {
     yyerror(&@2, result, "expected SHOW AI COLUMNS"); YYABORT;
   }
