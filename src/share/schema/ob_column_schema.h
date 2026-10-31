@@ -139,6 +139,16 @@ int assign(const ObColumnSchemaV2 &src_schema);
   inline int set_cur_default_value_v2(const common::ObObj default_value) { return deep_copy_obj(default_value, cur_default_value_); }
   inline int set_column_name(const char *col_name) { return deep_copy_str(col_name, column_name_); }
   inline int set_column_name(const common::ObString &col_name) { return deep_copy_str(col_name, column_name_); }
+  bool is_ai_column() const { return column_flags_ & AI_COLUMN_FLAG; }
+  bool is_ai_column_state() const { return column_flags_ & AI_COLUMN_STATE_FLAG; }
+  const common::ObString &get_ai_column_expr() const { return ai_column_expr_; }
+  const common::ObString &get_ai_column_deps() const { return ai_column_deps_; }
+  int64_t get_ai_column_max_retries() const { return ai_column_max_retries_; }
+  int64_t get_ai_column_version() const { return ai_column_version_; }
+  int set_ai_column_expr(const common::ObString &s) { return deep_copy_str(s, ai_column_expr_); }
+  int set_ai_column_deps(const common::ObString &s) { return deep_copy_str(s, ai_column_deps_); }
+  void set_ai_column_max_retries(int64_t n) { ai_column_max_retries_ = n; }
+  void set_ai_column_version(int64_t n) { ai_column_version_ = n; }
   inline int set_comment(const char *comment) { return deep_copy_str(comment, comment_); }
   inline int set_comment(const common::ObString &comment) { return deep_copy_str(comment, comment_); }
   inline void set_on_update_current_timestamp(const bool is_on_update_for_timestamp) { on_update_current_timestamp_ = is_on_update_for_timestamp; }
@@ -398,6 +408,10 @@ private:
   ObSkipIndexColumnAttr skip_index_attr_;
   int64_t lob_chunk_size_;
   share::ObLocalSessionVar local_session_vars_;
+  common::ObString ai_column_expr_;
+  common::ObString ai_column_deps_;
+  int64_t ai_column_max_retries_;
+  int64_t ai_column_version_;
 };
 
 inline int32_t ObColumnSchemaV2::get_data_length() const

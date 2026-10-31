@@ -3532,6 +3532,10 @@ int ObAlterTableResolver::resolve_alter_table_column_definition(AlterColumnSchem
   } else { // add column level constraint
     add_or_modify_check_cst_times_ += alter_table_schema.get_constraint_count() - cst_cnt;
   }
+  if (OB_SUCC(ret) && column.is_ai_column()) {
+    if (OB_FAIL(validate_ai_column(column, tmp_table_schema))) {
+    }
+  }
   // else if (OB_FAIL(process_default_value(stat, column))) {
   //   SQL_RESV_LOG(WARN, "failed to set default value", K(ret));
   //   //when add new column, the default value should saved in both origin default value

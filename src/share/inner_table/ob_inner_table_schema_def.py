@@ -342,7 +342,11 @@ all_column_def = dict(
       ('sub_data_type', 'int', 'false', '0'),
       ('skip_index_attr', 'int', 'false', '0'),
       ('lob_chunk_size', 'int', 'false', 'OB_DEFAULT_LOB_CHUNK_SIZE'),
-      ('local_session_vars', 'longtext', 'true')
+      ('local_session_vars', 'longtext', 'true'),
+      ('ai_column_expr', 'varchar:65536', 'true'),
+      ('ai_column_deps', 'varchar:8192', 'true'),
+      ('ai_column_max_retries', 'int', 'false', '2'),
+      ('ai_column_version', 'int', 'false', '0')
   ]
   )
 

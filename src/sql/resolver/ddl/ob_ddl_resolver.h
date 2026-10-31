@@ -200,6 +200,9 @@ public:
   static int check_prefix_key(
       const int32_t prefix_len,
       const share::schema::ObColumnSchemaV2 &column_schema);
+  int resolve_ai_column_definition(share::schema::ObColumnSchemaV2 &column, const ParseNode &node);
+  int validate_ai_column(share::schema::ObColumnSchemaV2 &column,
+                         const share::schema::ObTableSchema &table);
   int resolve_default_value(
       ParseNode *def_node,
       ObDefaultValueRes &resolve_res);

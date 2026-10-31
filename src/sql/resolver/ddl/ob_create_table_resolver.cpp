@@ -939,6 +939,11 @@ int ObCreateTableResolver::resolve_table_elements(const ParseNode *node,
       }
     }
 
+    for (int64_t i = 0; OB_SUCC(ret) && i < table_schema.get_column_count(); ++i) {
+      ObColumnSchemaV2 *col = table_schema.get_column_schema_by_idx(i);
+      if (col->is_ai_column() && OB_FAIL(validate_ai_column(*col, table_schema))) {
+      }
+    }
     if (OB_SUCC(ret)) {
       // todo@lanyi add related case
       if (OB_UNLIKELY(is_organization_set_to_heap() && primary_key_set_in_heap_table && NULL != primary_node_in_heap_table)) {
