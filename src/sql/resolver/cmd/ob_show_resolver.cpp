@@ -130,6 +130,11 @@ int ObShowResolver::check_db_access_for_show_sql(const ObShowResolverContext &sh
 
 int ObShowResolver::resolve(const ParseNode &parse_tree)
 {
+  if (parse_tree.type_ == T_SHOW_COLUMNS && parse_tree.num_child_ == 1
+      && parse_tree.children_ != nullptr && parse_tree.children_[0] != nullptr
+      && parse_tree.children_[0]->type_ == T_SELECT) {
+    return resolve_describe_select(*parse_tree.children_[0]);
+  }
   int ret = OB_SUCCESS;
   uint64_t real_id = OB_INVALID_ID;
   ObString database_name;

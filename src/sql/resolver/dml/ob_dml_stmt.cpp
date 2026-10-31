@@ -168,6 +168,7 @@ int TableItem::deep_copy(ObIRawExprCopier &expr_copier,
   alias_name_ = other.alias_name_;
   qb_name_ = other.qb_name_;
   type_ = other.type_;
+  is_file_table_ = other.is_file_table_;
   ref_id_ = other.ref_id_;
   is_system_table_ = other.is_system_table_;
   is_index_table_ = other.is_index_table_;
@@ -1555,7 +1556,7 @@ int ObDMLStmt::formalize_stmt_expr_reference(ObRawExprFactory *expr_factory,
       if (OB_ISNULL(column_item.expr_) ||
           OB_ISNULL(table_item = get_table_item_by_id(column_item.table_id_))) {
         ret = OB_ERR_UNEXPECTED;
-      } else if (table_item->is_function_table() ||
+      } else if ((table_item->is_function_table() && !table_item->is_file_table_) ||
                  table_item->is_json_table() ||
                  table_item->for_update_ ||
                  table_item->is_values_table()) {
