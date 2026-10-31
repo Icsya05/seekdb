@@ -14,7 +14,7 @@ namespace schema
 class AiColumnState
 {
 public:
-  enum Field { STATUS, REQUEST, OWNER, LEASE, FIELD_COUNT };
+  enum Field { STATUS, REQUEST, OWNER, LEASE, ATTEMPTS, VERSION, FIELD_COUNT };
 
   static bool depends_on(const ObColumnSchemaV2 &column, uint64_t id)
   {
@@ -33,7 +33,7 @@ public:
 
   static int name(uint64_t column_id, Field field, common::ObSqlString &out)
   {
-    static const char *suffix[] = {"status", "request", "owner", "lease"};
+    static const char *suffix[] = {"status", "request", "owner", "lease", "attempts", "version"};
     int ret = common::OB_SUCCESS;
     if (field < STATUS || field >= FIELD_COUNT) {
       ret = common::OB_INVALID_ARGUMENT;
@@ -59,7 +59,7 @@ public:
     if (OB_FAIL(name(ai_column.get_column_id(), field, column_name))) {
     } else if (OB_FAIL(out.set_column_name(column_name.string()))) {
     } else {
-      if (field == LEASE) {
+      if (field >= LEASE) {
         out.set_data_type(ObIntType);
         out.set_accuracy(ObAccuracy::DDL_DEFAULT_ACCURACY[ObIntType]);
         value.set_int(0);
