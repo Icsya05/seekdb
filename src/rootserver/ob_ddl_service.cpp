@@ -22551,6 +22551,7 @@ int ObDDLService::drop_column_online(
     ::localtime_r(&t.tv_sec, &tm);
 #endif
     new_column_schema->set_unused();
+    new_column_schema->del_column_flag(AI_COLUMN_FLAG | AI_COLUMN_STATE_FLAG);
     new_column_schema->set_prev_column_id(new_column_schema->get_column_id());
     new_column_schema->set_next_column_id(new_column_schema->get_column_id());
     new_column_schema->drop_not_null_cst(); // change column to null.
@@ -22565,6 +22566,15 @@ int ObDDLService::drop_column_online(
     } else if (OB_FAIL(ddl_operator.update_single_column(trans, origin_table_schema, new_table_schema,
                                                                    *new_column_schema, true/*need_del_stats*/))) {
     } else if (OB_FAIL(alter_table_update_index_and_view_column(new_table_schema, *new_column_schema, ddl_operator, trans))) {
+    }
+  }
+  for (int f = 0; OB_SUCC(ret) && orig_column_schema != nullptr && orig_column_schema->is_ai_column()
+                  && f < AiColumnState::FIELD_COUNT; ++f) {
+    ObSqlString field;
+    if (OB_FAIL(AiColumnState::name(orig_column_schema->get_column_id(), static_cast<AiColumnState::Field>(f), field))) {
+    } else if (OB_FAIL(SMART_CALL(drop_column_online(schema_guard, origin_table_schema, field.string(),
+                   new_tbl_visible_cols_cnt_after_alter, last_drop_column_id,
+                   ddl_operator, trans, new_table_schema, update_column_name_set)))) {
     }
   }
   return ret;
@@ -22590,6 +22600,13 @@ int ObDDLService::drop_column_offline(const ObTableSchema &origin_table_schema,
   } else if (OB_FAIL(drop_column_update_new_table(orig_column_schema->get_column_name_str(), new_table_schema))) {
   } else {
     // do nothing
+  }
+  for (int f = 0; OB_SUCC(ret) && orig_column_schema != nullptr && orig_column_schema->is_ai_column()
+                  && f < AiColumnState::FIELD_COUNT; ++f) {
+    ObSqlString field;
+    if (OB_FAIL(AiColumnState::name(orig_column_schema->get_column_id(), static_cast<AiColumnState::Field>(f), field))) {
+    } else if (OB_FAIL(drop_column_update_new_table(field.string(), new_table_schema))) {
+    }
   }
   return ret;
 }

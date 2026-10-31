@@ -79,7 +79,7 @@ int ObDMLResolver::resolve_ai_column_catalog(const ObString &database, const ObS
     if (table == nullptr || !table->is_user_table() || table->is_in_recyclebin()) { continue; }
     for (int64_t j = 0; OB_SUCC(ret) && j < table->get_column_count(); ++j) {
       const ObColumnSchemaV2 *column = table->get_column_schema_by_idx(j);
-      if (!column->is_ai_column()) { continue; }
+      if (!column->is_ai_column() || column->is_unused()) { continue; }
       ObSqlString field[AiColumnState::FIELD_COUNT], qualified, expression, rowkey;
       uint64_t field_id[AiColumnState::FIELD_COUNT] = {};
       for (int f = 0; OB_SUCC(ret) && f < AiColumnState::FIELD_COUNT; ++f) {

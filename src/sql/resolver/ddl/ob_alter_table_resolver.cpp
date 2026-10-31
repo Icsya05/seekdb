@@ -16,6 +16,7 @@
 
 #define USING_LOG_PREFIX SQL_RESV
 #include "config_bridge.h"
+#include "share/schema/ob_ai_column_schema.h"
 #include "sql/resolver/ddl/ob_alter_table_resolver.h"
 #include "sql/resolver/expr/ob_raw_expr_part_expr_checker.h"
 #include "sql/resolver/dml/ob_delete_resolver.h"
@@ -35,6 +36,22 @@ using namespace common;
 using namespace obcall;
 namespace sql
 {
+namespace {
+int check_ai_input_name_change(const ObTableSchema &table, const ObString &name)
+{
+  const ObColumnSchemaV2 *input = table.get_column_schema(name);
+  if (input == nullptr) { return OB_SUCCESS; }
+  for (int64_t i = 0; i < table.get_column_count(); ++i) {
+    const ObColumnSchemaV2 *column = table.get_column_schema_by_idx(i);
+    if (column->is_ai_column() && !column->is_unused()
+        && AiColumnState::depends_on(*column, input->get_column_id())) {
+      LOG_USER_ERROR(OB_NOT_SUPPORTED, "dropping or renaming an AI COLUMN input");
+      return OB_NOT_SUPPORTED;
+    }
+  }
+  return OB_SUCCESS;
+}
+}
 ObAlterTableResolver::ObAlterTableResolver(ObResolverParams &params)
     : ObDDLResolver(params),
       table_schema_(NULL),
@@ -3898,6 +3915,9 @@ int ObAlterTableResolver::resolve_change_column(const ParseNode &node)
       }
     }
 
+    if (OB_SUCC(ret) && origin_column_name != alter_column_schema.get_column_name_str()) {
+      ret = check_ai_input_name_change(*table_schema_, origin_column_name);
+    }
     // resolve index (unique key only) of column
     if (OB_SUCC(ret) && alter_column_schema.is_unique_key_) {
       if (OB_FAIL(resolve_column_index(alter_column_schema.get_column_name_str()))) {
@@ -4208,6 +4228,7 @@ int ObAlterTableResolver::resolve_drop_column(
       } else if (OB_FAIL(resolve_column_definition_ref(alter_column_schema,
                                                         node.children_[i], true))) {
       } else if (OB_FAIL(alter_column_schema.set_column_name(alter_column_schema.get_origin_column_name()))) {
+      } else if (OB_FAIL(check_ai_input_name_change(*table_schema_, alter_column_schema.get_origin_column_name()))) {
       } else {
         if (OB_SUCC(ret)) {
           alter_column_schema.alter_type_ = OB_DDL_DROP_COLUMN;
@@ -4359,6 +4380,7 @@ int ObAlterTableResolver::resolve_rename_column(const ParseNode &node)
     } else if (OB_FAIL(alter_column_schema.assign(*origin_col_schema))) {
     } else if (OB_FAIL(alter_column_schema.set_origin_column_name(origin_column_name))) {
     } else if (OB_FAIL(alter_column_schema.set_column_name(new_column_name))) {
+    } else if (OB_FAIL(check_ai_input_name_change(*table_schema_, origin_column_name))) {
     } else if (OB_FAIL(check_mysql_rename_column(alter_column_schema, *table_schema_,
                                                  *alter_table_stmt))) {
     } else {

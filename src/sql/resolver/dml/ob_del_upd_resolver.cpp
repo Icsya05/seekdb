@@ -410,6 +410,10 @@ int ObDelUpdResolver::resolve_assign_columns(const ParseNode &assign_target,
         ret = OB_SUCCESS;
       } else if (OB_ISNULL(base_col_expr)) {
         ret = OB_ERR_UNEXPECTED;
+      } else if (session_info_->is_user_session()
+                 && (base_col_expr->get_column_flags() & (AI_COLUMN_FLAG | AI_COLUMN_STATE_FLAG))) {
+        ret = OB_NOT_SUPPORTED;
+        LOG_USER_ERROR(OB_NOT_SUPPORTED, "direct assignment to an AI COLUMN or its task state");
       }
       if (OB_SUCC(ret) &&
           OB_FAIL(column_list.push_back(static_cast<ObColumnRefRawExpr *>(col_expr)))) {
@@ -493,13 +497,15 @@ int ObDelUpdResolver::invalidate_ai_columns(ObTableAssignment &assignments,
   const int64_t explicit_count = assignments.assignments_.count();
   for (int64_t i = 0; OB_SUCC(ret) && session_info_->is_user_session() && i < schema.get_column_count(); ++i) {
     const ObColumnSchemaV2 *col = schema.get_column_schema_by_idx(i);
-    if (!col->is_ai_column()) { continue; }
+    if (!col->is_ai_column() || col->is_unused()) { continue; }
     bool affected = false;
     for (int64_t j = 0; j < explicit_count && !affected; ++j) {
       const ObColumnRefRawExpr *ref = assignments.assignments_.at(j).column_expr_;
-      const ObColumnSchemaV2 *assigned = schema.get_column_schema(ref->get_column_id());
+      const ColumnItem *item = get_stmt()->get_column_item_by_id(ref->get_table_id(), ref->get_column_id());
+      const uint64_t base_id = !table.is_basic_table() && item != nullptr ? item->base_cid_ : ref->get_column_id();
+      const ObColumnSchemaV2 *assigned = schema.get_column_schema(base_id);
       affected = (assigned != nullptr && assigned->is_rowkey_column())
-          || AiColumnState::depends_on(*col, ref->get_column_id());
+          || AiColumnState::depends_on(*col, base_id);
     }
     if (!affected) { continue; }
     if (!table.is_basic_table()) {
@@ -2238,6 +2244,7 @@ int ObDelUpdResolver::resolve_insert_columns(const ParseNode *node,
       ObQualifiedName column_ref;
       ObRawExpr *ref_expr = NULL;
       ObColumnRefRawExpr *column_expr = NULL;
+      ObColumnRefRawExpr *protected_column = nullptr;
       ObNameCaseMode case_mode = OB_NAME_CASE_INVALID;
       bool is_duplicate = false;
       if (OB_ISNULL(column_node)) {
@@ -2253,8 +2260,12 @@ int ObDelUpdResolver::resolve_insert_columns(const ParseNode *node,
         ret = OB_ERR_UNEXPECTED;
       } else if (FALSE_IT(column_expr = static_cast<ObColumnRefRawExpr*>(ref_expr))) {
         //do nothing
+      } else if (FALSE_IT(protected_column = column_expr)) {
+      } else if (OB_FAIL(ObTransformUtils::get_base_column(get_stmt(), protected_column))) {
+      } else if (OB_ISNULL(protected_column)) {
+        ret = OB_ERR_UNEXPECTED;
       } else if (session_info_->is_user_session()
-                 && (column_expr->get_column_flags() & (AI_COLUMN_FLAG | AI_COLUMN_STATE_FLAG))) {
+                 && (protected_column->get_column_flags() & (AI_COLUMN_FLAG | AI_COLUMN_STATE_FLAG))) {
         ret = OB_NOT_SUPPORTED;
         LOG_USER_ERROR(OB_NOT_SUPPORTED, "explicit INSERT into an AI COLUMN or its task state");
       } else if (OB_FAIL(check_insert_column_duplicate(column_expr->get_column_id(), is_duplicate))) {
@@ -2291,7 +2302,10 @@ int ObDelUpdResolver::resolve_insert_columns(const ParseNode *node,
     if (OB_SUCC(ret)) {
       int64_t N = column_items.count();
       for (int64_t i = 0; OB_SUCC(ret) && i < N; i++) {
-        if (session_info_->is_user_session() && (column_items.at(i).expr_->get_column_flags() & AI_COLUMN_FLAG)) {
+        ObColumnRefRawExpr *base = column_items.at(i).expr_;
+        if (OB_FAIL(ObTransformUtils::get_base_column(get_stmt(), base))) { break; }
+        if (base == nullptr) { ret = OB_ERR_UNEXPECTED; break; }
+        if (session_info_->is_user_session() && (base->get_column_flags() & AI_COLUMN_FLAG)) {
           continue;
         }
         uint64_t column_id = column_items.at(i).column_id_;

@@ -198,7 +198,7 @@ int AiColumnWorker::process_table(uint64_t table_id, bool &did_work)
   }
   for (int64_t i = 0; OB_SUCC(ret) && i < table->get_column_count(); ++i) {
     const ObColumnSchemaV2 *column = table->get_column_schema_by_idx(i);
-    if (!column->is_ai_column()) { continue; }
+    if (!column->is_ai_column() || column->is_unused()) { continue; }
     ColumnTask *task = OB_NEWx(ColumnTask, &allocator);
     if (OB_ISNULL(task)) { ret = OB_ALLOCATE_MEMORY_FAILED; break; }
     if (OB_FAIL(tasks.push_back(task))) { task->~ColumnTask(); break; }
