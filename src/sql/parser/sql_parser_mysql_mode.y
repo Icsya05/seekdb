@@ -603,7 +603,7 @@ stmt:
   | prepare_stmt            { $$ = $1; question_mark_issue($$, result); }
   | variable_set_stmt       { $$ = $1; question_mark_issue($$, result); }
   | execute_stmt            { $$ = $1; check_question_mark($$, result); }
-  | alter_table_stmt        { $$ = $1; check_question_mark($$, result); }
+  | alter_table_stmt        { $$ = $1; if ($$->type_ != T_UPDATE) { check_question_mark($$, result); } }
   | alter_system_stmt       { $$ = $1; check_question_mark($$, result); }
   | deallocate_prepare_stmt { $$ = $1; check_question_mark($$, result); }
   | create_user_stmt        { $$ = $1; check_question_mark($$, result); }
