@@ -35,7 +35,7 @@ namespace sql
 ObPhysicalPlan::ObPhysicalPlan(MemoryContext &mem_context /* = CURRENT_CONTEXT */)
   : ObPlanCacheObject(ObLibCacheNameSpace::NS_CRSR, mem_context),
     phy_hint_(),
-    ai_column_refs_(allocator_),
+    ai_column_refs_(common::OB_MALLOC_NORMAL_BLOCK_SIZE, common::ModulePageAllocator(allocator_)),
     root_op_spec_(NULL),
     param_count_(0),
     signature_(0),

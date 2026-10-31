@@ -42,19 +42,25 @@ public:
     AiReadCollector visitor(refs, parents, projection);
     ret = stmt.iterate_stmt_expr(visitor);
     if (OB_SUCC(ret) && stmt.is_update_stmt()) {
-      for (ObUpdateTableInfo *table : static_cast<ObUpdateStmt &>(stmt).get_update_table_info()) {
-        for (ObAssignment &assignment : table->assignments_) {
+      ObIArray<ObUpdateTableInfo *> &tables = static_cast<ObUpdateStmt &>(stmt).get_update_table_info();
+      for (int64_t i = 0; OB_SUCC(ret) && i < tables.count(); ++i) {
+        ObUpdateTableInfo *table = tables.at(i);
+        for (int64_t j = 0; OB_SUCC(ret) && j < table->assignments_.count(); ++j) {
+          ObAssignment &assignment = table->assignments_.at(j);
           if (OB_SUCC(ret) && !assignment.is_implicit_) { ret = visitor.do_visit(assignment.expr_); }
         }
       }
     }
-    for (TableItem *table : stmt.get_table_items()) {
+    for (int64_t i = 0; OB_SUCC(ret) && i < stmt.get_table_items().count(); ++i) {
+      TableItem *table = stmt.get_table_items().at(i);
       if (OB_SUCC(ret) && table->ref_query_ != nullptr) {
         ret = SMART_CALL(statement(*table->ref_query_, refs, parents, false));
       }
     }
     if (OB_SUCC(ret) && stmt.is_select_stmt()) {
-      for (ObSelectStmt *branch : static_cast<ObSelectStmt &>(stmt).get_set_query()) {
+      ObIArray<ObSelectStmt *> &branches = static_cast<ObSelectStmt &>(stmt).get_set_query();
+      for (int64_t i = 0; OB_SUCC(ret) && i < branches.count(); ++i) {
+        ObSelectStmt *branch = branches.at(i);
         if (OB_SUCC(ret)) { ret = SMART_CALL(statement(*branch, refs, parents, projection)); }
       }
     }
@@ -65,9 +71,11 @@ public:
   int projection(ObSelectStmt &stmt, int64_t index)
   {
     int ret = OB_SUCCESS;
+    for (int64_t i = 0; i < parents_.count(); ++i) { if (parents_.at(i) == &stmt) { return ret; } }
     if (index < 0 || index >= stmt.get_select_item_size()) { ret = OB_ERR_UNEXPECTED; }
     else if (!stmt.get_set_query().empty()) {
-      for (ObSelectStmt *branch : stmt.get_set_query()) {
+      for (int64_t i = 0; OB_SUCC(ret) && i < stmt.get_set_query().count(); ++i) {
+        ObSelectStmt *branch = stmt.get_set_query().at(i);
         if (OB_SUCC(ret)) { ret = SMART_CALL(projection(*branch, index)); }
       }
     } else {

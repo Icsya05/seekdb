@@ -387,7 +387,7 @@ private:
   DISALLOW_COPY_AND_ASSIGN(ObPhysicalPlan);
 private:
   ObPhyPlanHint phy_hint_; //hints for this plan
-  common::Ob2DArray<uint64_t> ai_column_refs_; // table/column ID pairs, before SQL rewrites
+  common::ObArray<uint64_t> ai_column_refs_; // table/column ID pairs, before SQL rewrites
   // root operator spec for static typing engine.
   ObOpSpec *root_op_spec_;
   int64_t param_count_;
