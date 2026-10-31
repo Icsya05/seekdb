@@ -11258,19 +11258,19 @@ relation_factor %prec LOWER_PARENS
 {
   malloc_non_terminal_node($$, result->malloc_pool_, T_TABLE_COLLECTION_EXPRESSION, 2, $3, $6);
 }
-| relation_name '(' expr_list ')' %prec LOWER_PARENS
+| NAME_OB '(' expr_list ')' %prec LOWER_PARENS
 {
   ParseNode *args = NULL;
   merge_nodes(args, result, T_EXPR_LIST, $3);
   malloc_non_terminal_node($$, result->malloc_pool_, T_FILE_TABLE_EXPRESSION, 3, $1, args, NULL);
 }
-| relation_name '(' expr_list ')' relation_name
+| NAME_OB '(' expr_list ')' relation_name
 {
   ParseNode *args = NULL;
   merge_nodes(args, result, T_EXPR_LIST, $3);
   malloc_non_terminal_node($$, result->malloc_pool_, T_FILE_TABLE_EXPRESSION, 3, $1, args, $5);
 }
-| relation_name '(' expr_list ')' AS relation_name
+| NAME_OB '(' expr_list ')' AS relation_name
 {
   ParseNode *args = NULL;
   merge_nodes(args, result, T_EXPR_LIST, $3);
