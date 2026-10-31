@@ -13,7 +13,8 @@
 #include <new>
 #ifndef _WIN32
 #include <fcntl.h>
-#include <glob.h>
+#include <dirent.h>
+#include <fnmatch.h>
 #include <sys/stat.h>
 #include <unistd.h>
 #endif
@@ -21,6 +22,7 @@
 #include "common/json_type/ob_json_tree.h"
 #include "common/timezone/ob_time_convert.h"
 #include "lib/charset/ob_charset.h"
+#include "lib/oblog/ob_warning_buffer.h"
 #include "share/ob_errno.h"
 
 namespace oceanbase { namespace sql {
@@ -36,6 +38,18 @@ int file_error(const char *message)
 {
   LOG_USER_ERROR(OB_INVALID_ARGUMENT, message);
   return OB_INVALID_ARGUMENT;
+}
+int record_error(int ret, int64_t record)
+{
+  ObWarningBuffer *warnings = ob_get_tsi_warning_buffer();
+  if (warnings != nullptr && ret != OB_SUCCESS && ret != OB_ITER_END) {
+    std::string reason = warnings->get_err_code() == ret ? warnings->get_err_msg() : "invalid input or I/O error";
+    if (reason.compare(0,16,"file SQL record ") != 0) {
+      std::string message = "file SQL record " + std::to_string(record) + ": " + reason;
+      warnings->set_error(message.c_str(),ret);
+    }
+  }
+  return ret;
 }
 int valid_utf8(const std::string &text)
 {
@@ -405,6 +419,7 @@ int FileScanReader::json_record(std::vector<Cell> &cells, std::vector<std::strin
 }
 int FileScanReader::record(std::vector<Cell> &cells, std::vector<std::string> &names)
 {
+  int64_t number = record_number_ + 1;
   int ret = check_unchanged();
   if (OB_SUCC(ret)) {
     ret = definition_.format == FileScanDefinition::CSV ? csv_record(cells) : json_record(cells, names);
@@ -414,7 +429,8 @@ int FileScanReader::record(std::vector<Cell> &cells, std::vector<std::string> &n
     if (check != OB_SUCCESS) { ret = check; }
   }
   if (ret != OB_SUCCESS && ret != OB_ITER_END) {
-    LOG_WARN("file SQL record read failed", K(ret), "record", record_number_ + 1);
+    record_error(ret,number);
+    LOG_WARN("file SQL record read failed", K(ret), "record", number);
   }
   return ret;
 }
@@ -459,19 +475,24 @@ int FileScanReader::discover(const std::string &pattern, const ObString &root)
   int ret = canonical(directory, root, checked);
   if (OB_FAIL(ret)) { return ret; }
   if (base.empty() || base.find('\0') != std::string::npos) { return OB_INVALID_ARGUMENT; }
-  glob_t found{};
-  std::string full = checked + "/" + base;
-  int code = glob(full.c_str(), GLOB_NOSORT, nullptr, &found);
-  if (code != 0 && code != GLOB_NOMATCH) { ret = OB_IO_ERROR; }
-  else if (found.gl_pathc > 100000) { ret = OB_SIZE_OVERFLOW; }
-  for (size_t i = 0; OB_SUCC(ret) && i < found.gl_pathc; ++i) {
+  DIR *entries = opendir(checked.c_str());
+  if (entries == nullptr) { return OB_IO_ERROR; }
+  size_t path_bytes = 0;
+  while (OB_SUCC(ret)) {
+    errno = 0;
+    dirent *entry = readdir(entries);
+    if (entry == nullptr) { if (errno != 0) { ret = OB_IO_ERROR; } break; }
+    if (fnmatch(base.c_str(),entry->d_name,FNM_PERIOD) != 0) { continue; }
     std::string path;
     struct stat st;
-    if (OB_FAIL(canonical(found.gl_pathv[i], root, path))) { }
+    if (OB_FAIL(canonical(checked + "/" + entry->d_name, root, path))) { }
     else if (stat(path.c_str(), &st) != 0) { ret = OB_IO_ERROR; }
-    else if (S_ISREG(st.st_mode)) { files_.push_back(path); }
+    else if (S_ISREG(st.st_mode)) {
+      if (files_.size() >= 100000 || path.size() > MAX_RECORD_BYTES-path_bytes) { ret = OB_SIZE_OVERFLOW; }
+      else { path_bytes += path.size(); files_.push_back(std::move(path)); }
+    }
   }
-  globfree(&found);
+  closedir(entries);
   std::sort(files_.begin(), files_.end());
   return ret;
 #endif
@@ -546,6 +567,7 @@ int FileScanReader::infer(FileScanDefinition &definition, const ObString &root)
       }
     }
     if (ret == OB_ITER_END) { ret = OB_SUCCESS; }
+    else if (OB_FAIL(ret)) { record_error(ret,record_number_); }
     if (OB_SUCC(ret) && definition.columns.empty()) { ret = file_error("file SQL: cannot infer columns from empty input"); }
     for (FileColumn &column : definition.columns) {
       if (column.type == FileValueType::UNKNOWN) { column.nullable = true; }
@@ -615,7 +637,7 @@ int FileScanReader::next(ObIAllocator &allocator, ObIArray<ObObj> &values)
     std::vector<std::string> names;
     if (OB_FAIL(record(cells,names))) { return ret; }
     if (definition_.format == FileScanDefinition::CSV && cells.size() != definition_.columns.size()) {
-      return file_error("file SQL: CSV record has a different number of fields");
+      return record_error(file_error("file SQL: CSV record has a different number of fields"),record_number_);
     }
     for (size_t i = 0; OB_SUCC(ret) && i < definition_.columns.size(); ++i) {
       Cell cell; cell.is_null = true;

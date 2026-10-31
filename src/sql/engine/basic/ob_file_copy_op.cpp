@@ -4,6 +4,7 @@
 #include "sql/engine/basic/ob_function_table_op.h"
 #include "sql/engine/basic/ob_file_scan.h"
 #include "sql/engine/ob_exec_context.h"
+#include "sql/engine/expr/ob_expr_lob_utils.h"
 #include "share/schema/ob_schema_utils.h"
 #include "share/ob_server_struct.h"
 
@@ -41,6 +42,8 @@ int ObSelectIntoOp::write_file_copy_row()
 {
   int ret = OB_SUCCESS;
   ObSEArray<ObObj,16> values;
+  ObArenaAllocator row_allocator("FileCopyRow");
+  int64_t text_bytes = 0;
   for (int64_t i = 0; OB_SUCC(ret) && i < MY_SPEC.select_exprs_.count(); ++i) {
     const ObExpr *expr = MY_SPEC.select_exprs_.at(i);
     ObDatum *datum = nullptr;
@@ -48,8 +51,19 @@ int ObSelectIntoOp::write_file_copy_row()
     if (expr == nullptr) { ret = OB_ERR_UNEXPECTED; }
     else if (OB_FAIL(expr->eval(eval_ctx_,datum))) { }
     else if (OB_FAIL(datum->to_obj(obj,expr->obj_meta_))) { }
-    else if (ob_is_text_tc(obj.get_type())) { ret = OB_NOT_SUPPORTED; }
-    else { ret = values.push_back(obj); }
+    else if (!obj.is_null() && ob_is_text_tc(obj.get_type())) {
+      ObTextStringIter text(expr->datum_meta_.type_,expr->datum_meta_.cs_type_,datum->get_string(),
+                            expr->obj_meta_.has_lob_header());
+      int64_t length = 0;
+      ObString full, owned;
+      if (OB_FAIL(ObTextStringHelper::build_text_iter(text,ctx_,&row_allocator))) { }
+      else if (OB_FAIL(text.get_byte_len(length))) { }
+      else if (length < 0 || length > FileScanReader::MAX_RECORD_BYTES-text_bytes) { ret = OB_SIZE_OVERFLOW; }
+      else if (OB_FAIL(text.get_full_data(full))) { }
+      else if (OB_FAIL(ob_write_string(row_allocator,full,owned))) { }
+      else { text_bytes += length; obj.set_varchar(owned); }
+    }
+    if (OB_SUCC(ret)) { ret = values.push_back(obj); }
   }
   return OB_SUCC(ret) ? file_copy_writer_->write_row(values) : ret;
 }
