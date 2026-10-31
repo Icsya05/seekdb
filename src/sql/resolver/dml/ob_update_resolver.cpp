@@ -37,6 +37,7 @@ ObUpdateResolver::~ObUpdateResolver()
 
 int ObUpdateResolver::resolve(const ParseNode &parse_tree)
 {
+  if (parse_tree.value_ == 1) { fprintf(stderr, "AI retry: enter resolver\n"); }
   int ret = OB_SUCCESS;
   ObUpdateStmt *update_stmt = NULL;
   ObSEArray<ObTableAssignment, 2> tables_assign;
@@ -153,6 +154,7 @@ int ObUpdateResolver::resolve(const ParseNode &parse_tree)
     } else if (OB_FAIL(check_safe_update_mode(update_stmt))) {
     } else { /*do nothing*/ }
   }
+  if (parse_tree.value_ == 1) { fprintf(stderr, "AI retry: resolver ret=%d\n", ret); }
   return ret;
 }
 
@@ -183,6 +185,7 @@ int bind_ai_retry_status(ParseNode *node, const ObString &status)
 int ObUpdateResolver::resolve_ai_column_retry(const ParseNode &parse_tree,
                                              ObIArray<ObTableAssignment> &assignments)
 {
+  fprintf(stderr, "AI retry: enter assignments\n");
   int ret = OB_SUCCESS;
   ObUpdateStmt *stmt = get_update_stmt();
   const TableItem *table = nullptr;
@@ -210,6 +213,7 @@ int ObUpdateResolver::resolve_ai_column_retry(const ParseNode &parse_tree,
     } else if (OB_FAIL(assignments.push_back(assignment))) {
     }
   }
+  fprintf(stderr, "AI retry: assignments ret=%d\n", ret);
   return ret;
 }
 
