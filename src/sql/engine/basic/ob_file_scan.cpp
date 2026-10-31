@@ -1,13 +1,16 @@
 /* Copyright (c) 2026 OceanBase. Licensed under the Apache License, Version 2.0. */
 #define USING_LOG_PREFIX SQL_ENG
 #include "sql/engine/basic/ob_file_scan.h"
+#include "sql/engine/basic/ob_parquet_file_reader.h"
 #include <algorithm>
+#include <atomic>
 #include <cerrno>
 #include <cmath>
 #include <cstdlib>
 #include <cstring>
 #include <limits>
 #include <map>
+#include <new>
 #ifndef _WIN32
 #include <fcntl.h>
 #include <glob.h>
@@ -18,6 +21,7 @@
 #include "common/json_type/ob_json_tree.h"
 #include "common/timezone/ob_time_convert.h"
 #include "lib/charset/ob_charset.h"
+#include "share/ob_errno.h"
 
 namespace oceanbase { namespace sql {
 using namespace common;
@@ -198,12 +202,16 @@ int FileScanDefinition::decode(const ObString &value)
     auto *array = static_cast<ObJsonArray *>(base);
     for (int64_t i = 0; OB_SUCC(ret) && i < array->element_count(); ++i) {
       bool text = i == 2 || i == 7 || (i >= 14 && (i-14)%4 == 0);
-      if (array->get_value(i)->json_type() != (text ? ObJsonNodeType::J_STRING : ObJsonNodeType::J_INT)) {
+      ObIJsonBase *node = array->get_value(i);
+      if (text ? node->json_type() != ObJsonNodeType::J_STRING
+               : (node->json_type() != ObJsonNodeType::J_INT
+                  && (node->json_type() != ObJsonNodeType::J_UINT || node->get_uint() > INT64_MAX))) {
         ret = OB_INVALID_DATA;
       }
     }
     if (OB_SUCC(ret)) {
-      auto n = [&](int i) { return array->get_value(i)->get_int(); };
+      auto n = [&](int i) { auto *node = array->get_value(i); return node->json_type() == ObJsonNodeType::J_UINT
+                              ? static_cast<int64_t>(node->get_uint()) : node->get_int(); };
       if (n(0) != 1 || n(1) < CSV || n(1) > GLOB) { return OB_INVALID_DATA; }
       format = static_cast<Format>(n(1)); path = copy_string(array->get_value(2));
       header = n(3); delimiter = n(4); quote = n(5); escape = n(6);
@@ -219,8 +227,10 @@ int FileScanDefinition::decode(const ObString &value)
   return ret;
 }
 
+FileScanReader::~FileScanReader() { close(); }
 void FileScanReader::close()
 {
+  delete parquet_; parquet_ = nullptr;
   if (file_ != nullptr) { fclose(file_); file_ = nullptr; }
   files_.clear(); file_index_ = 0; record_number_ = 0;
 }
@@ -476,7 +486,12 @@ int FileScanReader::infer(FileScanDefinition &definition, const ObString &root)
       definition.row_count = files_.size();
     }
   } else if (definition.format == FileScanDefinition::PARQUET) {
-    ret = OB_NOT_SUPPORTED;
+    if (OB_SUCC(ret = open_file(definition.path, root))) {
+      definition.identity = opened_identity_;
+      ParquetFileReader parquet;
+      ret = parquet.open(file_, definition);
+      if (OB_SUCC(ret)) { ret = check_unchanged(); }
+    }
   } else if (OB_FAIL(open_file(definition.path, root))) {
   } else {
     definition.identity = opened_identity_;
@@ -538,13 +553,19 @@ int FileScanReader::infer(FileScanDefinition &definition, const ObString &root)
   close();
   return ret;
 }
-int FileScanReader::open(const FileScanDefinition &definition, const ObString &root)
+int FileScanReader::open(const FileScanDefinition &definition, const ObString &root,
+                         const ObIArray<int64_t> *projection)
 {
   close(); definition_ = definition;
   int ret = OB_SUCCESS;
   if (definition.format == FileScanDefinition::GLOB) { ret = discover(definition.path, root); }
   else if (OB_FAIL(open_file(definition.path, root))) { }
   else if (!(opened_identity_ == definition.identity)) { ret = file_error("file SQL: input changed since schema inference"); }
+  else if (definition.format == FileScanDefinition::PARQUET) {
+    parquet_ = new (std::nothrow) ParquetFileReader;
+    if (parquet_ == nullptr) { ret = OB_ALLOCATE_MEMORY_FAILED; }
+    else { ret = parquet_->open(file_, definition_, projection); }
+  }
   else { ret = skip_header(); }
   if (OB_FAIL(ret)) { close(); }
   return ret;
@@ -579,7 +600,11 @@ int FileScanReader::next(ObIAllocator &allocator, ObIArray<ObObj> &values)
 {
   values.reuse();
   int ret = OB_SUCCESS;
-  if (definition_.format == FileScanDefinition::GLOB) {
+  if (definition_.format == FileScanDefinition::PARQUET) {
+    if (OB_FAIL(check_unchanged())) { }
+    else if (parquet_ == nullptr) { ret = OB_NOT_INIT; }
+    else { ret = parquet_->next(allocator, values); }
+  } else if (definition_.format == FileScanDefinition::GLOB) {
     if (file_index_ >= files_.size()) { return OB_ITER_END; }
     Cell cell; cell.text = files_[file_index_++];
     ObObj value;
@@ -604,5 +629,151 @@ int FileScanReader::next(ObIAllocator &allocator, ObIArray<ObObj> &values)
     }
   }
   return ret;
+}
+
+namespace {
+#ifndef _WIN32
+int checked_directory(int descriptor, const ObString &root)
+{
+  char path[PATH_MAX];
+#ifdef __APPLE__
+  if (fcntl(descriptor,F_GETPATH,path) != 0) { return OB_IO_ERROR; }
+#else
+  std::string link = "/proc/self/fd/" + std::to_string(descriptor);
+  ssize_t n = readlink(link.c_str(),path,sizeof(path)-1);
+  if (n < 0 || n == sizeof(path)-1) { return OB_IO_ERROR; }
+  path[n] = 0;
+#endif
+  std::string checked;
+  return canonical(path,root,checked);
+}
+#endif
+}
+FileCsvWriter::~FileCsvWriter()
+{
+  if (file_ != nullptr) { fclose(file_); }
+#ifndef _WIN32
+  if (directory_ >= 0) {
+    if (!temporary_.empty()) { unlinkat(directory_,temporary_.c_str(),0); }
+    ::close(directory_);
+  }
+#endif
+}
+int FileCsvWriter::open(const FileScanDefinition &options, const ObString &root)
+{
+#ifdef _WIN32
+  return OB_NOT_SUPPORTED;
+#else
+  if (directory_ >= 0 || file_ != nullptr) { return OB_INIT_TWICE; }
+  options_ = options; root_.assign(root.ptr(),root.length());
+  if (options.path.empty() || options.path.find('\0') != std::string::npos || options.path.size() >= PATH_MAX) {
+    return OB_INVALID_ARGUMENT;
+  }
+  for (char c : options.null_text) {
+    if (c == 0 || c == '\n' || c == '\r' || c == options.delimiter || (options.quote != 0 && c == options.quote)) {
+      return file_error("file SQL: NULL text cannot contain CSV structural characters");
+    }
+  }
+  size_t slash = options.path.find_last_of('/');
+  std::string parent = slash == std::string::npos ? "." : options.path.substr(0,slash+1);
+  name_ = slash == std::string::npos ? options.path : options.path.substr(slash+1);
+  if (name_.empty() || name_ == "." || name_ == "..") { return OB_INVALID_ARGUMENT; }
+  std::string directory;
+  int ret = canonical(parent,root,directory);
+  if (OB_FAIL(ret)) { return ret; }
+  directory_ = ::open(directory.c_str(),O_RDONLY|O_DIRECTORY|O_CLOEXEC|O_NOFOLLOW);
+  if (directory_ < 0) { return OB_IO_ERROR; }
+  if (OB_FAIL(checked_directory(directory_,root))) { return ret; }
+  struct stat st;
+  if (fstatat(directory_,name_.c_str(),&st,AT_SYMLINK_NOFOLLOW) == 0) { return OB_FILE_ALREADY_EXIST; }
+  if (errno != ENOENT) { return OB_IO_ERROR; }
+  static std::atomic<uint64_t> serial{0};
+  for (int attempt = 0; attempt < 16 && file_ == nullptr; ++attempt) {
+    std::string name = ".seekdb-copy-" + std::to_string(getpid()) + "-" + std::to_string(serial.fetch_add(1));
+    int fd = openat(directory_,name.c_str(),O_WRONLY|O_CREAT|O_EXCL|O_CLOEXEC|O_NOFOLLOW,0600);
+    if (fd < 0) { if (errno == EEXIST) { continue; } return OB_IO_ERROR; }
+    temporary_ = name;
+    file_ = fdopen(fd,"wb");
+    if (file_ == nullptr) { ::close(fd); return OB_IO_ERROR; }
+  }
+  if (file_ == nullptr) { return OB_IO_ERROR; }
+  if (options.header) {
+    std::string row;
+    for (size_t i = 0; OB_SUCC(ret) && i < options.columns.size(); ++i) {
+      if (i != 0) { row.push_back(options.delimiter); }
+      ret = field(options.columns[i].name,false,row);
+    }
+    row.push_back('\n');
+    if (OB_SUCC(ret)) { ret = write(row); }
+  }
+  return ret;
+#endif
+}
+int FileCsvWriter::field(const std::string &text, bool is_null, std::string &row)
+{
+  if (text.size() > FileScanReader::MAX_RECORD_BYTES || row.size() > FileScanReader::MAX_RECORD_BYTES) { return OB_SIZE_OVERFLOW; }
+  if (is_null) { row += options_.null_text; }
+  else {
+    if (text.find('\0') != std::string::npos) { return OB_INVALID_DATA; }
+    bool quote = text.empty() || text == options_.null_text;
+    for (char c : text) { quote |= c == options_.delimiter || c == options_.quote || c == '\n' || c == '\r'; }
+    if (quote && options_.quote == 0) { return file_error("file SQL: quoted output is required for this CSV value"); }
+    if (quote) { row.push_back(options_.quote); }
+    for (char c : text) {
+      if (quote && (c == options_.quote || (options_.escape != options_.quote && c == options_.escape))) {
+        if (options_.escape == 0) { return file_error("file SQL: CSV escape is required for this value"); }
+        row.push_back(options_.escape);
+      }
+      row.push_back(c);
+      if (row.size() > FileScanReader::MAX_RECORD_BYTES) { return OB_SIZE_OVERFLOW; }
+    }
+    if (quote) { row.push_back(options_.quote); }
+  }
+  return row.size() > FileScanReader::MAX_RECORD_BYTES ? OB_SIZE_OVERFLOW : OB_SUCCESS;
+}
+int FileCsvWriter::write(const std::string &row)
+{
+  if (file_ == nullptr) { return OB_NOT_INIT; }
+  return fwrite(row.data(),1,row.size(),file_) == row.size() ? OB_SUCCESS : OB_IO_ERROR;
+}
+int FileCsvWriter::write_row(const ObIArray<ObObj> &values)
+{
+  if (values.count() != options_.columns.size()) { return OB_ERR_UNEXPECTED; }
+  int ret = OB_SUCCESS;
+  std::string row;
+  for (int64_t i = 0; OB_SUCC(ret) && i < values.count(); ++i) {
+    if (i != 0) { row.push_back(options_.delimiter); }
+    const ObObj &value = values.at(i);
+    std::string text;
+    if (value.is_string_type()) {
+      text.assign(value.get_string_ptr(),value.get_string_len());
+    } else if (!value.is_null()) {
+      char buffer[2048]; int64_t size = 0;
+      if (OB_SUCC(ret = value.print_plain_str_literal(buffer,sizeof(buffer),size))) { text.assign(buffer,size); }
+    }
+    if (OB_SUCC(ret)) { ret = field(text,value.is_null(),row); }
+  }
+  row.push_back('\n');
+  return OB_SUCC(ret) ? write(row) : ret;
+}
+int FileCsvWriter::finish()
+{
+#ifdef _WIN32
+  return OB_NOT_SUPPORTED;
+#else
+  if (file_ == nullptr || directory_ < 0 || temporary_.empty()) { return OB_NOT_INIT; }
+  int ret = checked_directory(directory_,view(root_));
+  if (OB_FAIL(ret)) { return ret; }
+  if (fflush(file_) != 0 || fsync(fileno(file_)) != 0) { return OB_IO_ERROR; }
+  int closed = fclose(file_); file_ = nullptr;
+  if (closed != 0) { return OB_IO_ERROR; }
+  // linkat publishes without replacing an existing path, including symlinks.
+  if (linkat(directory_,temporary_.c_str(),directory_,name_.c_str(),0) != 0) {
+    return errno == EEXIST ? OB_FILE_ALREADY_EXIST : OB_IO_ERROR;
+  }
+  if (unlinkat(directory_,temporary_.c_str(),0) != 0) { return OB_IO_ERROR; }
+  temporary_.clear();
+  return OB_SUCCESS;
+#endif
 }
 } }

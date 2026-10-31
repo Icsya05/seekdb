@@ -5450,6 +5450,8 @@ int ObStaticEngineCG::generate_spec(ObLogSelectInto &op, ObSelectIntoSpec &spec,
   UNUSED(in_root_job);
   ObIAllocator &alloc = phy_plan_->get_allocator();
   int ret = OB_SUCCESS;
+  const auto *select = static_cast<const ObSelectStmt *>(op.get_stmt());
+  spec.is_file_copy_ = select != nullptr && select->get_select_into() != nullptr && select->get_select_into()->is_file_copy_;
   if (OB_UNLIKELY(1 != op.get_num_of_child())) {
     ret = OB_ERR_UNEXPECTED;
   } else if (OB_FAIL(deep_copy_obj(alloc, op.get_outfile_name(), spec.outfile_name_))) {
@@ -6491,6 +6493,10 @@ int ObStaticEngineCG::check_op_vectorization(ObLogicalOperator *op, ObSqlSchemaG
     if (spf_op->is_update_set()) {
       disable_vectorize = true;
     }
+  } else if (log_op_def::LOG_FUNCTION_TABLE == op->get_type()) {
+    const auto *function = static_cast<ObLogFunctionTable *>(op);
+    const TableItem *table = op->get_stmt()->get_table_item_by_id(function->get_table_id());
+    disable_vectorize = table == nullptr || !table->is_file_table_;
   } else if (log_op_def::LOG_JOIN == op->get_type()) {
     // do nothing
   } else if (log_op_def::LOG_GROUP_BY == op->get_type()) {

@@ -15,6 +15,10 @@
  */
 
 #define USING_LOG_PREFIX SQL_ENG
+#include "sql/engine/basic/ob_file_scan.h"
+#include "sql/engine/basic/ob_function_table_op.h"
+#include "share/schema/ob_schema_utils.h"
+#include "share/ob_server_struct.h"
 
 #include <cmath>
 #include <memory>
@@ -38,11 +42,12 @@ OB_SERIALIZE_MEMBER(ObSelectIntoOpInput, task_id_, sqc_id_);
 OB_SERIALIZE_MEMBER((ObSelectIntoSpec, ObOpSpec), into_type_, user_vars_, outfile_name_,
     field_str_, line_str_, closed_cht_, is_optional_, select_exprs_, is_single_, max_file_size_,
     escaped_cht_, cs_type_, parallel_, buffer_size_, is_overwrite_,
-    external_properties_);
+    external_properties_, is_file_copy_);
 
 
 int ObSelectIntoOp::inner_open()
 {
+  if (MY_SPEC.is_file_copy_) { return open_file_copy(); }
   int ret = OB_SUCCESS;
   ObSQLSessionInfo *session = NULL;
   if (OB_ISNULL(session = ctx_.get_my_session())) {
@@ -188,6 +193,7 @@ int ObSelectIntoOp::calc_outfile_path()
 }
 int ObSelectIntoOp::inner_get_next_row()
 {
+  if (MY_SPEC.is_file_copy_) { return execute_file_copy(false,1); }
   int ret = 0 == top_limit_cnt_ ? OB_ITER_END : OB_SUCCESS;
   int64_t row_count = 0;
   const ObItemType into_type = MY_SPEC.into_type_;
@@ -236,6 +242,7 @@ int ObSelectIntoOp::inner_get_next_row()
 
 int ObSelectIntoOp::inner_get_next_batch(const int64_t max_row_cnt)
 {
+  if (MY_SPEC.is_file_copy_) { return execute_file_copy(true,max_row_cnt); }
   int ret = OB_SUCCESS;
   const ObBatchRows *child_brs = NULL;
   int64_t batch_size = min(max_row_cnt, MY_SPEC.max_batch_size_);
@@ -324,6 +331,10 @@ int ObSelectIntoOp::inner_rescan()
 
 int ObSelectIntoOp::inner_close()
 {
+  if (MY_SPEC.is_file_copy_) {
+    if (file_copy_writer_ != nullptr) { file_copy_writer_->~FileCsvWriter(); ctx_.get_allocator().free(file_copy_writer_); file_copy_writer_ = nullptr; }
+    return OB_SUCCESS;
+  }
   int ret = OB_SUCCESS;
   if (OB_NOT_NULL(data_writer_) && OB_FAIL(data_writer_->close_data_writer())) {
   }
@@ -1275,6 +1286,7 @@ int ObSelectIntoOp::new_data_writer(ObExternalFileWriter *&data_writer)
 
 void ObSelectIntoOp::destroy()
 {
+  if (file_copy_writer_ != nullptr) { file_copy_writer_->~FileCsvWriter(); ctx_.get_allocator().free(file_copy_writer_); file_copy_writer_ = nullptr; }
   if (OB_NOT_NULL(data_writer_)) {
     data_writer_->~ObExternalFileWriter();
   }

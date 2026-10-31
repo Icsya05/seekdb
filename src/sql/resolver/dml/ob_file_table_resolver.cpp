@@ -99,6 +99,7 @@ int ObDMLResolver::resolve_file_table_item(const ParseNode &tree, TableItem *&it
   else if (OB_FAIL(definition.encode(*allocator_, encoded))) { }
   else if (OB_FAIL(ObRawExprUtils::build_const_string_expr(*params_.expr_factory_, ObVarcharType,
                                                         encoded, CS_TYPE_UTF8MB4_BIN, metadata))) { }
+  else if (OB_FAIL(metadata->formalize(session_info_))) { }
   else if ((item = get_stmt()->create_table_item(*allocator_)) == nullptr) { ret = OB_ALLOCATE_MEMORY_FAILED; }
   else {
     ObString alias;
@@ -123,6 +124,10 @@ int ObDMLResolver::resolve_file_table_item(const ParseNode &tree, TableItem *&it
     // executions. Infer again instead of caching a plan with stale columns.
     ObQueryHint &hint = get_stmt()->get_query_ctx()->get_query_hint_for_update();
     const_cast<ObGlobalHint &>(hint.get_global_hint()).plan_cache_policy_ = OB_USE_PLAN_CACHE_NONE;
+  }
+  if (ret == OB_ERR_PARSER_SYNTAX) {
+    ret = OB_ERR_PARSE_SQL;
+    LOG_USER_ERROR(OB_ERR_PARSE_SQL, "Invalid file table arguments", 0, "", 1);
   }
   return ret;
 }

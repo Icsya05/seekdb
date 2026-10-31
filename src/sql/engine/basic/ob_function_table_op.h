@@ -23,6 +23,7 @@
 
 namespace oceanbase
 {
+namespace pl { class ObPLCollection; }
 namespace sql
 {
 
@@ -58,12 +59,14 @@ public:
   virtual int inner_open() override;
   virtual int inner_rescan() override;
   virtual int inner_get_next_row() override;
-  //virtual int inner_get_next_batch(int64_t max_row_cnt) override;
+  virtual int inner_get_next_batch(int64_t max_row_cnt) override;
   virtual int inner_close() override;
   virtual void destroy() override;
+  int validate_file_input() const;
 private:
   int open_file_reader();
   int inner_get_next_row_file();
+  int fill_file_row();
   int inner_get_next_row_udf();
   int inner_get_next_row_sys_func();
   int get_current_result(common::ObObj &result);

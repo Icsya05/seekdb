@@ -55,16 +55,49 @@ int ObFunctionTableOp::open_file_reader()
       file_reader_ = OB_NEWx(FileScanReader, &ctx_.get_allocator());
       if (file_reader_ == nullptr) { ret = OB_ALLOCATE_MEMORY_FAILED; }
     }
-    if (OB_SUCC(ret)) { ret = file_reader_->open(definition, secure_root); }
+    if (OB_SUCC(ret)) { ret = file_reader_->open(definition, secure_root, &MY_SPEC.file_column_indices_); }
   }
   return ret;
 }
 
+int ObFunctionTableOp::validate_file_input() const
+{
+  return file_reader_ == nullptr ? OB_SUCCESS : file_reader_->check_unchanged();
+}
+
 int ObFunctionTableOp::inner_get_next_row_file()
 {
+  clear_evaluated_flag();
+  file_row_allocator_.reuse();
+  return fill_file_row();
+}
+
+int ObFunctionTableOp::inner_get_next_batch(int64_t max_row_cnt)
+{
+  if (!MY_SPEC.is_file_table_) { return OB_NOT_SUPPORTED; }
   int ret = OB_SUCCESS;
   clear_evaluated_flag();
   file_row_allocator_.reuse();
+  int64_t size = std::min<int64_t>(16, std::min(max_row_cnt, MY_SPEC.max_batch_size_));
+  if (size <= 0) { return OB_INVALID_ARGUMENT; }
+  brs_.size_ = 0; brs_.end_ = false; brs_.skip_->reset(size);
+  ObEvalCtx::BatchInfoScopeGuard guard(eval_ctx_);
+  guard.set_batch_size(size);
+  while (OB_SUCC(ret) && brs_.size_ < size) {
+    guard.set_batch_idx(brs_.size_);
+    ret = fill_file_row();
+    if (ret == OB_ITER_END) { ret = OB_SUCCESS; brs_.end_ = true; break; }
+    if (OB_SUCC(ret)) {
+      ++brs_.size_;
+      if (file_row_allocator_.used() >= FileScanReader::MAX_RECORD_BYTES) { break; }
+    }
+  }
+  return ret;
+}
+
+int ObFunctionTableOp::fill_file_row()
+{
+  int ret = OB_SUCCESS;
   ObSEArray<ObObj, 16> values;
   if (OB_ISNULL(file_reader_)) { ret = OB_ERR_UNEXPECTED; }
   else if (OB_FAIL(ctx_.check_status())) { }

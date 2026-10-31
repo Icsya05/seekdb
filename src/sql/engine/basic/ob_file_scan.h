@@ -11,6 +11,7 @@
 namespace oceanbase { namespace sql {
 
 enum class FileValueType { UNKNOWN, BOOLEAN, BIGINT, DOUBLE, VARCHAR, DATE, DATETIME };
+class ParquetFileReader;
 
 struct FileColumn {
   std::string name;
@@ -54,9 +55,10 @@ public:
   static constexpr int64_t MAX_RECORD_BYTES = 16 * 1024 * 1024;
   static constexpr int64_t MAX_COLUMNS = 1024;
   FileScanReader() = default;
-  ~FileScanReader() { close(); }
+  ~FileScanReader();
   int infer(FileScanDefinition &definition, const common::ObString &secure_root);
-  int open(const FileScanDefinition &definition, const common::ObString &secure_root);
+  int open(const FileScanDefinition &definition, const common::ObString &secure_root,
+           const common::ObIArray<int64_t> *projection = nullptr);
   int next(common::ObIAllocator &allocator, common::ObIArray<common::ObObj> &values);
   int check_unchanged() const;
   void close();
@@ -78,6 +80,7 @@ private:
   static FileValueType classify(const Cell &cell, int16_t &scale);
   static FileValueType widen(FileValueType left, FileValueType right);
   FILE *file_ = nullptr;
+  ParquetFileReader *parquet_ = nullptr;
   FileScanDefinition definition_;
   std::vector<std::string> files_;
   size_t file_index_ = 0;
@@ -85,6 +88,24 @@ private:
   FileIdentity opened_identity_;
   FileScanReader(const FileScanReader &) = delete;
   FileScanReader &operator=(const FileScanReader &) = delete;
+};
+
+class FileCsvWriter {
+public:
+  FileCsvWriter() = default;
+  ~FileCsvWriter();
+  int open(const FileScanDefinition &options, const common::ObString &secure_root);
+  int write_row(const common::ObIArray<common::ObObj> &values);
+  int finish();
+private:
+  int field(const std::string &text, bool is_null, std::string &row);
+  int write(const std::string &row);
+  FileScanDefinition options_;
+  std::string root_, name_, temporary_;
+  FILE *file_ = nullptr;
+  int directory_ = -1;
+  FileCsvWriter(const FileCsvWriter &) = delete;
+  FileCsvWriter &operator=(const FileCsvWriter &) = delete;
 };
 
 } }
