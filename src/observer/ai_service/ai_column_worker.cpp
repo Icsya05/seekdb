@@ -1,6 +1,7 @@
 #define USING_LOG_PREFIX SERVER_OMT
 #include "observer/ai_service/ai_column_worker.h"
 #include "sql/resolver/ai_column_expression.h"
+#include "sql/engine/expr/ob_expr_ai/ob_ai_func_client.h"
 #include "share/ob_server_struct.h"
 #include "share/ob_share_util.h"
 #include "share/schema/ob_ai_column_schema.h"
@@ -320,6 +321,7 @@ int AiColumnWorker::process_table(uint64_t table_id, bool &did_work)
                    t.expression_.ptr(), table_name.ptr(), where.ptr()))) {
       } else {
         int call_ret = OB_SUCCESS;
+        AiSingleAttemptGuard single_attempt;
         ObTimeoutCtx timeout;
         ObMySQLProxy::MySQLResult response;
         ObObj value;

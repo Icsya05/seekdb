@@ -25,6 +25,18 @@ namespace oceanbase
 {
 namespace common 
 {
+// A durable scheduler owns its retry budget. Keep each synchronous model SQL
+// invocation to one HTTP attempt instead of nesting the client's retry loop.
+class AiSingleAttemptGuard final
+{
+public:
+  AiSingleAttemptGuard();
+  ~AiSingleAttemptGuard();
+private:
+  bool previous_;
+  DISALLOW_COPY_AND_ASSIGN(AiSingleAttemptGuard);
+};
+
 class ObAIFuncClient: public ObAIFuncHandle
 {
 public:

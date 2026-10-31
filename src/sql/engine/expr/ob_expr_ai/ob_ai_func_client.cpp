@@ -69,13 +69,17 @@ private:
 }
 
 const int64_t ObAIFuncClient::CURL_MAX_TIMEOUT_SEC = INT_MAX/1000;
+namespace { thread_local bool ai_single_attempt = false; }
+AiSingleAttemptGuard::AiSingleAttemptGuard() : previous_(ai_single_attempt) { ai_single_attempt = true; }
+AiSingleAttemptGuard::~AiSingleAttemptGuard() { ai_single_attempt = previous_; }
+
 ObAIFuncClient::ObAIFuncClient()
     : allocator_(nullptr), url_(nullptr), header_list_(nullptr),
       curlm_(nullptr), curl_(nullptr), curl_handles_(), response_buffers_() 
 {
   is_finished_.store(false);
   abs_timeout_ts_ = 0;
-  max_retry_times_ = 3;  // default retry 3 times
+  max_retry_times_ = ai_single_attempt ? 0 : 3;  // ordinary AI calls retain their retries
   timeout_sec_ = 60; // default timeout 1 minute
   max_concurrency_ = 0;
 }
@@ -347,11 +351,11 @@ int ObAIFuncClient::send_post_batch(common::ObIAllocator &allocator,
       return ret;
     }
     // retry if need
-    for (int64_t i = 0; OB_SUCC(ret) && i < max_retry_times_; ++i) {
+    for (int64_t i = 0; OB_SUCC(ret) && i < (max_retry_times_ == 0 ? 1 : max_retry_times_); ++i) {
       ret = send_post_batch(data_array, responses);
       if (is_timeout()) {
         ret = OB_TIMEOUT;
-      } else if (OB_CURL_ERROR == ret) {
+      } else if (OB_CURL_ERROR == ret && max_retry_times_ > 0) {
         ret = OB_SUCCESS;
         int64_t delay_ms = 1000 * (1 << i) + rand() % 1000;
         ob_usleep(delay_ms * 1000);

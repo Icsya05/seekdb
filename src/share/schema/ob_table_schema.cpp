@@ -18,6 +18,7 @@
 #include "common/datum/ob_datum.h"
 #include "share/schema/ob_col_desc.h"  // ObColDesc complete type(previously hidden behind the ddl_common include chain)
 #include "ob_table_schema.h"
+#include "share/schema/ob_column_schema.h"
 #include "lib/compress/ob_compressor_pool.h"
 #include "share/schema/ob_partition_array_utils.h"
 #include "share/schema/ob_part_mgr_util.h"
@@ -2774,6 +2775,15 @@ int ObTableSchema::convert_basic_column_ids(const ObHashMap<uint64_t, uint64_t> 
   bool need_convert_id_hash_array = false;
   if (OB_FAIL(check_need_convert_id_hash_array(need_convert_id_hash_array))) {
   }
+  // AI state names encode their result column's ID. Remove all old names before
+  // renaming, since a new name may be occupied by another old state column.
+  const bool rebuild_ai_names = name_hash_array_ != nullptr;
+  for (int64_t i = 0; OB_SUCC(ret) && rebuild_ai_names && i < column_cnt_; ++i) {
+    ObColumnSchemaV2 *column = column_array_[i];
+    if (column != nullptr && column->is_ai_column_state()) {
+      ret = remove_col_from_name_hash_array(column);
+    }
+  }
   for (int64_t i = 0; OB_SUCC(ret) && i < column_cnt_; i++) {
     ObColumnSchemaV2 *column = column_array_[i];
     if (OB_ISNULL(column)) {
@@ -2795,6 +2805,12 @@ int ObTableSchema::convert_basic_column_ids(const ObHashMap<uint64_t, uint64_t> 
   }
   if (OB_SUCC(ret)) {
     set_max_used_column_id(max_column_id);
+  }
+  for (int64_t i = 0; OB_SUCC(ret) && rebuild_ai_names && i < column_cnt_; ++i) {
+    ObColumnSchemaV2 *column = column_array_[i];
+    if (column != nullptr && column->is_ai_column_state()) {
+      ret = add_col_to_name_hash_array(column);
+    }
   }
   return ret;
 }
