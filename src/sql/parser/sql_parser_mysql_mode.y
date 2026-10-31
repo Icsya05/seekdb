@@ -40,6 +40,17 @@
 #include "../../../src/sql/parser/sql_parser_mysql_mode_lex.h"
 #include "../../../src/sql/parser/sql_parser_base.h"
 
+/* Keep MySQL DESC SELECT as EXPLAIN unless a file table is present. */
+static int contains_file_table(const ParseNode *node, int depth)
+{
+  if (node == NULL || depth > 256) { return 0; }
+  if (node->type_ == T_FILE_TABLE_EXPRESSION) { return 1; }
+  for (int64_t i = 0; node->children_ != NULL && i < node->num_child_; ++i) {
+    if (contains_file_table(node->children_[i],depth+1)) { return 1; }
+  }
+  return 0;
+}
+
 #define GEN_EXPLAN_STMT(no_use, explain_stmt, explain_type, display_type, stmt, into_table, set_statement_id) \
   (void)(no_use); \
   ParseNode *type_node = NULL; \
@@ -12318,7 +12329,7 @@ explain_or_desc relation_factor opt_desc_column_option
 
 | explain_or_desc explainable_stmt
 {
-  if ($1->value_ == 1 && $2->type_ == T_SELECT) {
+  if ($1->value_ == 1 && $2->type_ == T_SELECT && contains_file_table($2,0)) {
     malloc_non_terminal_node($$, result->malloc_pool_, T_SHOW_COLUMNS, 1, $2);
   } else {
     GEN_EXPLAN_STMT($1, $$, 0, 0, $2, NULL, NULL);
