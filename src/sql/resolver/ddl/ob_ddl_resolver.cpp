@@ -138,7 +138,6 @@ int ObDDLResolver::validate_ai_column(ObColumnSchemaV2 &column, const ObTableSch
     } else if (dep->is_ai_column() || dep->is_generated_column()
                || dep->get_column_name_str().case_compare(column.get_column_name_str()) == 0) {
       ret = OB_NOT_SUPPORTED;
-      LOG_USER_ERROR(OB_NOT_SUPPORTED, "AI COLUMN dependency on itself, another AI COLUMN or a generated column");
     } else if (OB_FAIL(ObRawExprUtils::init_column_expr(*dep, session_info_, *ref.ref_expr_))) {
     } else {
       bool duplicate = false;
