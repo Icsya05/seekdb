@@ -14,7 +14,7 @@ int validate_inputs(ObOperator *op, int depth = 0)
 {
   if (op == nullptr || depth > 512) { return OB_SIZE_OVERFLOW; }
   int ret = OB_SUCCESS;
-  if (op->get_type() == PHY_FUNCTION_TABLE) { ret = static_cast<ObFunctionTableOp *>(op)->validate_file_input(); }
+  if (op->get_spec().type_ == PHY_FUNCTION_TABLE) { ret = static_cast<ObFunctionTableOp *>(op)->validate_file_input(); }
   for (uint32_t i = 0; OB_SUCC(ret) && i < op->get_child_cnt(); ++i) { ret = validate_inputs(op->get_child(i),depth+1); }
   return ret;
 }

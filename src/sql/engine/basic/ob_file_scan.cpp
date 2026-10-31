@@ -140,6 +140,7 @@ bool FileIdentity::operator==(const FileIdentity &other) const
 ObObjType FileScanDefinition::object_type(FileValueType type)
 {
   switch (type) {
+    case FileValueType::UNKNOWN: return ObNullType;
     case FileValueType::BOOLEAN: return ObTinyIntType;
     case FileValueType::BIGINT: return ObIntType;
     case FileValueType::DOUBLE: return ObDoubleType;
@@ -150,7 +151,7 @@ ObObjType FileScanDefinition::object_type(FileValueType type)
 }
 const char *FileScanDefinition::type_name(FileValueType type)
 {
-  static const char *names[] = {"VARCHAR","BOOLEAN","BIGINT","DOUBLE","VARCHAR","DATE","DATETIME"};
+  static const char *names[] = {"NULL","BOOLEAN","BIGINT","DOUBLE","VARCHAR","DATE","DATETIME"};
   return names[static_cast<int>(type)];
 }
 
@@ -547,7 +548,7 @@ int FileScanReader::infer(FileScanDefinition &definition, const ObString &root)
     if (ret == OB_ITER_END) { ret = OB_SUCCESS; }
     if (OB_SUCC(ret) && definition.columns.empty()) { ret = file_error("file SQL: cannot infer columns from empty input"); }
     for (FileColumn &column : definition.columns) {
-      if (column.type == FileValueType::UNKNOWN) { column.type = FileValueType::VARCHAR; column.nullable = true; }
+      if (column.type == FileValueType::UNKNOWN) { column.nullable = true; }
     }
   }
   close();
@@ -654,17 +655,30 @@ FileCsvWriter::~FileCsvWriter()
   if (file_ != nullptr) { fclose(file_); }
 #ifndef _WIN32
   if (directory_ >= 0) {
-    if (!temporary_.empty()) { unlinkat(directory_,temporary_.c_str(),0); }
+    remove_temporary();
     ::close(directory_);
+  }
+#endif
+}
+void FileCsvWriter::remove_temporary()
+{
+#ifndef _WIN32
+  if (directory_ >= 0 && !temporary_.empty()) {
+    struct stat st;
+    if (fstatat(directory_,temporary_.c_str(),&st,AT_SYMLINK_NOFOLLOW) == 0
+        && st.st_dev == output_identity_.device && st.st_ino == output_identity_.inode) {
+      unlinkat(directory_,temporary_.c_str(),0);
+    }
   }
 #endif
 }
 int FileCsvWriter::open(const FileScanDefinition &options, const ObString &root)
 {
-#ifdef _WIN32
+#ifndef __linux__
   return OB_NOT_SUPPORTED;
 #else
   if (directory_ >= 0 || file_ != nullptr) { return OB_INIT_TWICE; }
+  if (root.empty()) { return OB_ERR_NO_PRIV_DIRECT_PATH_ACCESS; }
   options_ = options; root_.assign(root.ptr(),root.length());
   if (options.path.empty() || options.path.find('\0') != std::string::npos || options.path.size() >= PATH_MAX) {
     return OB_INVALID_ARGUMENT;
@@ -693,6 +707,8 @@ int FileCsvWriter::open(const FileScanDefinition &options, const ObString &root)
     int fd = openat(directory_,name.c_str(),O_WRONLY|O_CREAT|O_EXCL|O_CLOEXEC|O_NOFOLLOW,0600);
     if (fd < 0) { if (errno == EEXIST) { continue; } return OB_IO_ERROR; }
     temporary_ = name;
+    if (fstat(fd,&st) != 0) { ::close(fd); unlinkat(directory_,name.c_str(),0); temporary_.clear(); return OB_IO_ERROR; }
+    output_identity_.device = st.st_dev; output_identity_.inode = st.st_ino;
     file_ = fdopen(fd,"wb");
     if (file_ == nullptr) { ::close(fd); return OB_IO_ERROR; }
   }
@@ -758,22 +774,23 @@ int FileCsvWriter::write_row(const ObIArray<ObObj> &values)
 }
 int FileCsvWriter::finish()
 {
-#ifdef _WIN32
+#ifndef __linux__
   return OB_NOT_SUPPORTED;
 #else
   if (file_ == nullptr || directory_ < 0 || temporary_.empty()) { return OB_NOT_INIT; }
   int ret = checked_directory(directory_,view(root_));
   if (OB_FAIL(ret)) { return ret; }
   if (fflush(file_) != 0 || fsync(fileno(file_)) != 0) { return OB_IO_ERROR; }
-  int closed = fclose(file_); file_ = nullptr;
-  if (closed != 0) { return OB_IO_ERROR; }
-  // linkat publishes without replacing an existing path, including symlinks.
-  if (linkat(directory_,temporary_.c_str(),directory_,name_.c_str(),0) != 0) {
+  // Publish the opened inode, so replacing the temporary pathname cannot
+  // substitute a symlink or different file. The destination is never replaced.
+  std::string descriptor = "/proc/self/fd/" + std::to_string(fileno(file_));
+  if (linkat(AT_FDCWD,descriptor.c_str(),directory_,name_.c_str(),AT_SYMLINK_FOLLOW) != 0) {
     return errno == EEXIST ? OB_FILE_ALREADY_EXIST : OB_IO_ERROR;
   }
-  if (unlinkat(directory_,temporary_.c_str(),0) != 0) { return OB_IO_ERROR; }
+  int closed = fclose(file_); file_ = nullptr;
+  remove_temporary();
   temporary_.clear();
-  return OB_SUCCESS;
+  return closed == 0 ? OB_SUCCESS : OB_IO_ERROR;
 #endif
 }
 } }

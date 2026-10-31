@@ -74,7 +74,17 @@ int ObFunctionTableOp::inner_get_next_row_file()
 
 int ObFunctionTableOp::inner_get_next_batch(int64_t max_row_cnt)
 {
-  if (!MY_SPEC.is_file_table_) { return OB_NOT_SUPPORTED; }
+  if (!MY_SPEC.is_file_table_) {
+    // Existing collection functions keep their scalar semantics even when a
+    // parent vector operator requests a batch. Their buffers own this row.
+    ObEvalCtx::BatchInfoScopeGuard guard(eval_ctx_);
+    guard.set_batch_size(1); guard.set_batch_idx(0);
+    brs_.size_ = 0; brs_.end_ = false; brs_.skip_->reset(1);
+    int ret = inner_get_next_row();
+    if (ret == OB_ITER_END) { brs_.end_ = true; ret = OB_SUCCESS; }
+    else if (OB_SUCC(ret)) { brs_.size_ = 1; }
+    return ret;
+  }
   int ret = OB_SUCCESS;
   clear_evaluated_flag();
   file_row_allocator_.reuse();

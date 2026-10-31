@@ -4,6 +4,7 @@
 #include "share/ob_errno.h"
 #include "lib/charset/ob_charset.h"
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstring>
 #include <limits>
@@ -136,6 +137,20 @@ bool snappy(const std::string &input, size_t expected, std::string &output) {
     }
   }
   return b.ok && b.pos == b.size && output.size() == expected;
+}
+uint32_t page_crc(const std::string &data) {
+  static const std::array<uint32_t,256> table = [] {
+    std::array<uint32_t,256> result{};
+    for (uint32_t i = 0; i < result.size(); ++i) {
+      uint32_t n = i;
+      for (int bit = 0; bit < 8; ++bit) { n = (n >> 1) ^ (0xedb88320U & (0U-(n & 1))); }
+      result[i] = n;
+    }
+    return result;
+  }();
+  uint32_t crc = 0xffffffffU;
+  for (unsigned char c : data) { crc = table[(crc ^ c) & 255] ^ (crc >> 8); }
+  return ~crc;
 }
 bool unpack(Bytes &b, unsigned width, size_t count, std::vector<uint32_t> &out) {
   if (width > 32 || count > VALUE_LIMIT) { return false; }
@@ -328,6 +343,9 @@ int ParquetFileReader::State::load_page(Column &c)
     if (expanded < 0 || expanded > PAGE_LIMIT || compressed < 0 || compressed > PAGE_LIMIT) { return OB_SIZE_OVERFLOW; }
     std::string packed;
     if (!read_at(file,c.position,compressed,c.chunk.end,packed)) { return OB_IO_ERROR; }
+    if (header.field(4) != nullptr && page_crc(packed) != static_cast<uint32_t>(header.integer(4))) {
+      return invalid("file SQL: Parquet page checksum mismatch");
+    }
     c.position += compressed;
     const Meta *v2 = kind == 3 ? header.field(8) : nullptr;
     int64_t prefix = v2 == nullptr ? 0 : v2->integer(5)+v2->integer(6);
@@ -384,6 +402,13 @@ int ParquetFileReader::State::load_page(Column &c)
       unsigned width = values.little(1);
       if (!unpack(values,width,present,c.indices)) { return OB_INVALID_DATA; }
       for (auto i : c.indices) { if (i >= c.dictionary.size()) { return OB_INVALID_DATA; } }
+    } else if (c.encoding == 3 && s.physical == 0) {
+      // Boolean RLE data includes a four-byte length in both page versions.
+      size_t length = values.little(4);
+      if (!values.take(length)) { return OB_INVALID_DATA; }
+      Bytes booleans(values.data+values.pos, length);
+      if (!unpack(booleans,1,present,c.indices) || booleans.pos != booleans.size) { return OB_INVALID_DATA; }
+      values.pos += length;
     } else if (c.encoding != 0) { return unsupported("Parquet data encoding"); }
     c.plain_pos = values.pos;
     if (memory() > MEMORY_LIMIT) { return OB_SIZE_OVERFLOW; }
@@ -404,6 +429,9 @@ int ParquetFileReader::State::next_column(Column &c, ObIAllocator &allocator, Ob
   if (c.encoding == 2 || c.encoding == 8) {
     if (c.value >= c.indices.size()) { return OB_INVALID_DATA; }
     value = c.dictionary[c.indices[c.value++]];
+  } else if (c.encoding == 3 && s.physical == 0) {
+    if (c.value >= c.indices.size()) { return OB_INVALID_DATA; }
+    value.integer = c.indices[c.value++];
   } else {
     Bytes bytes(c.page); bytes.pos = c.plain_pos;
     if (!plain(bytes,s,value,c.bool_bit)) { return OB_INVALID_DATA; }

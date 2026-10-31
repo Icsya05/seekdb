@@ -1226,7 +1226,7 @@ int ObSelectIntoOp::check_secure_file_path(ObString file_name)
 #endif
     ret = OB_FILE_NOT_EXIST;
   } else if (OB_FAIL(ObSchemaUtils::get_runtime_varchar_variable(*GCTX.schema_service_,
-                                                                SYS_VAR_SECURE_FILE_PRIV,
+                                                                share::SYS_VAR_SECURE_FILE_PRIV,
                                                                 ctx_.get_allocator(),
                                                                 secure_file_priv))) {
   } else if (OB_FAIL(ObResolverUtils::check_secure_path(secure_file_priv, actual_path))) {

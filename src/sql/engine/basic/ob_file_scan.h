@@ -100,10 +100,12 @@ public:
 private:
   int field(const std::string &text, bool is_null, std::string &row);
   int write(const std::string &row);
+  void remove_temporary();
   FileScanDefinition options_;
   std::string root_, name_, temporary_;
   FILE *file_ = nullptr;
   int directory_ = -1;
+  FileIdentity output_identity_;
   FileCsvWriter(const FileCsvWriter &) = delete;
   FileCsvWriter &operator=(const FileCsvWriter &) = delete;
 };
