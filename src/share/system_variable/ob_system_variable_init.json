@@ -10988,5 +10988,18 @@
     "info_cn": "启用 secure_file_priv 目录内的原生文件 SQL",
     "background_cn": "",
     "ref_url": ""
+  },
+  "ai_column_strict_read": {
+    "id": 10755,
+    "name": "ai_column_strict_read",
+    "default_value": "0",
+    "base_value": "0",
+    "data_type": "bool",
+    "info": "Reject reads of AI columns containing rows that are not READY",
+    "flags": "SESSION | MYSQL_ONLY | NEED_SERIALIZE",
+    "publish_version": "1.0.0.0",
+    "info_cn": "引用的 AI 列中存在未就绪行时拒绝执行语句",
+    "background_cn": "",
+    "ref_url": ""
   }
 }
