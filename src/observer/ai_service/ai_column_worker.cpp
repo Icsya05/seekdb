@@ -207,7 +207,7 @@ void AiColumnWorker::run1()
     if (GCTX.schema_service_ == nullptr || GCTX.sql_proxy_ == nullptr) {
       ret = OB_NOT_INIT;
     } else if (OB_FAIL(GCTX.schema_service_->get_runtime_schema_guard(guard))) {
-    } else if (OB_FAIL(guard.get_table_ids_in_tenant(ids))) {
+    } else if (OB_FAIL(guard.get_table_ids_in_runtime(ids))) {
     }
     for (int64_t i = 0; OB_SUCC(ret) && !has_set_stop() && i < ids.count(); ++i) {
       const ObTableSchema *table = nullptr;
