@@ -82,32 +82,82 @@ outer predicate selects only READY rows or no rows. Ordinary columns and other
 READY AI columns remain readable. The check shares the caller's transaction and
 snapshot and runs before UPDATE or DELETE side effects.
 
-## Validation checkpoints
+## Completed local validation
 
-The following are completed local checkpoints, not competition scores:
+Tested Release source: `c2cd9f4282b380848d03897ddd4b0949c4ae7c91`.
+Binary SHA-256: `6a3a7a6a8e7335b0b3f93eea7a37e519b437d24e60f8baf7c2db6f69e3eaf917`.
+The subsequent delivery commit only updates this document; its `src/` tree is
+identical to the tested source. This is local validation, not an official score.
 
-| Tested source | Evidence |
-| --- | --- |
-| `7d8005cefc2901573395eb58fd4f55ab210d51e4` | Release build; 36 independent DDL checks; restart persistence; four existing AI function suites |
-| `9b1f59e2c07ce5c1f323a17df1163dd2c6033e36` | Release build; eight worker/DML groups including rollback, typed values, grouping, stale responses and batching |
-| `f4de37c73c9822804bdde96679008f363166b237` | Release build; six native RETRY groups including pseudo-status, quoted status and transaction rollback |
+All five unmodified official AI Column mysqltests passed, including their exact
+expected-result comparisons: `ai_column_ddl`, `ai_column_t1_dml`,
+`ai_column_worker`, `ai_column_retry_strict`, and `ai_column_vector_index`.
+Their actual directory is `tools/deploy/mysql_test/test_suite/ai_column/`.
+Official tests, result files and benchmark files are byte-for-byte unchanged
+from upstream competition revision `5bce9e06d1281347ad61344e4b01fab9158c58a2`.
 
-The five official AI Column tests are located in
-`tools/deploy/mysql_test/test_suite/ai_column/`, rather than the `ai_function/`
-directory mentioned in the task description. The initial run against the
-pre-catalog checkpoint did not pass. Official test and result files remain
-unchanged. Catalog and strict-read changes require a new successful build and
-runtime results before this checkpoint table can be extended.
+| Independent checks on the tested binary | Passed |
+| --- | ---: |
+| DDL, definitions, invalid expressions and ordinary SQL | 36 |
+| Worker, typed/grouped results, DML, stale responses and batch claims | 8 |
+| Conditional RETRY and rollback | 6 |
+| Strict reads, prepared-plan toggling, views and caller transactions | 7 |
+| Task grouping, quoted composite keys and catalog plan invalidation | 3 |
+| Actual HTTP retry budgets | 2 |
+| Views, stored routines, column removal/recreation and input DDL guards | 4 |
+| Offline column-ID remapping | 1 |
+| Crash recovery | 1 |
+| Definition persistence after restart | 1 |
+| Total | 69 |
 
-Independent fault fixtures and reports live outside the repository under the
-local build laboratory. They are never loaded into the product. Their inputs
-and model responses are not encoded in `src/`.
+With `max_retries=0`, persistent HTTP 503 caused exactly one upstream request.
+With `max_retries=2`, two HTTP 503 responses followed by success caused exactly
+three requests. A guarded test killed only the task-owned database process
+during an HTTP request. READY data survived restart; committed PENDING work
+recovered after lease expiry in 64.296 seconds, with exactly two actual requests.
 
-## Remaining validation
+The column-ID test drops an earlier column and changes the input type through
+an offline rebuild. Dependencies and hidden state names are remapped, and the
+native DDL copy/checksum mapping carries the implicit state renames. A later
+input update produces the new result. Dropping an AI result also drops its
+hidden state in the same DDL transaction; adding it again after a rebuild works.
 
-Run all five unmodified AI Column suites; repeat affected endpoint/AI function
-regressions; verify strict mode with prepared plans, views and uncommitted
-invalidation; verify task grouping and quoted composite keys; exercise vector
-index invalidation and recovery. Crash recovery, large-table queue scanning,
-non-administrator catalog permissions and complex ALTER/view-write cases need
-separate evidence before treating this implementation as production ready.
+Four existing AI function suites (`ai_prompt`, `ai_function_enhancement`,
+`ai_model_endpoint_ddl`, `ai_model_ddl`), official `file_sql_basic`, and three
+FTS suites (`tokenize_function`, `simple_query`, `parser_properties`) also passed.
+
+Task claims do not assign NULL to already-PENDING results: business DML has
+already invalidated them. This avoids redundant vector index versions and
+preserves the official vector plan/result comparison without modifying tests
+or hardcoding costs. A redefined terminal result is invalidated when claimed.
+
+Reproduction commands inside the prepared local build laboratory:
+
+```sh
+bash /lab/build-ai-column.sh c2cd9f4282b380848d03897ddd4b0949c4ae7c91
+PYTHONPATH=/lab/python-deps python3 /lab/server-control.py start ai-column
+python3 /lab/check-official.py --label ai-column-21 --suite ai_column --tests \
+  ai_column_ddl ai_column_t1_dml ai_column_worker ai_column_retry_strict ai_column_vector_index
+python3 /lab/run-ai-column-independent.py 21 ddl worker retry strict catalog budget lifecycle remap recovery
+PYTHONPATH=/lab/python-deps python3 /lab/check-ai-column-ddl.py --restart
+```
+
+Independent scripts, local mock fixtures, complete reports and build logs are
+packaged outside the repository. Historical failed checkpoints remain distinct
+from the successful `21` reports. No test input, model name, key or response is
+encoded into product behavior. No official judge submission was made.
+
+## Limits and follow-up work
+
+Renaming or dropping an input referenced by a live AI definition is rejected
+atomically. Drop the AI definition first if that input needs to be renamed or
+removed. Updating AI inputs through a view is rejected; direct result assignment
+is rejected through both views and stored routines. Ordinary unrelated view
+updates and stored-routine input updates retain native semantics.
+
+Validation used a local single-process instance, mock HTTP services and
+administrator accounts. Large-table queue scanning, non-administrator catalog
+permissions, broad online expression redefinition under concurrent readers,
+and throughput at competition scale need separate evidence before production
+deployment. The four polling workers and full catalog expansion are correctness
+implementations, not claims of optimal throughput.
