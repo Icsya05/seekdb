@@ -71,3 +71,7 @@ retained allocations last until handle destruction and grow only as needed.
 For a single query with dim=256 and Top-100, user buffer capacity is 1824 bytes
 (excluding hipVS/RMM overhead). Build parameters remain NN_DESCENT, 128/256 graph
 degrees and 100 iterations; search preserves the original default/minimum rules.
+
+## Persistence smoke control flow
+
+The runners also compile test_persistence_host.cpp, which reuses the host API boundary and executes the actual persistence smoke's write mode. It checks the success path, serialization failure cleanup (exit 3), copy failure cleanup (exit 5), and invalid mode rejection (exit 2). This does not read or write a real CAGRA snapshot and is not a GPU persistence test. The actual smoke now alternates Top-K and query batch sizes, validating finite/nonnegative distances, unique in-range IDs and self matches after each search.

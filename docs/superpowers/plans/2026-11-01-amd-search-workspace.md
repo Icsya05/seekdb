@@ -47,3 +47,10 @@
 
 - Final verification: PowerShell and bash runners both passed nine cases in C11 and C++17; expected injected errors and explicit Windows overflow SKIP recorded. Pinned-header C/C++ syntax and production build.sh syntax passed; git diff --check passed.
 - Cloud reconnaissance: correct portal is https://developer.amd.com.cn/radeon/ (trailing slash); seekdb-hipvs template 3102 is available. Preview describes an older demo, so validate fixed V5/hipVS versions in a real instance. No instance launched or credits consumed. Browser session returned/closed.
+
+## Continuation: GPU validation preparation (2026-11-01)
+- Attempted actual seekdb-hipvs template launch. AMD returned resource pool/template not assigned to this account. No instance was created. Ordinary GPU pool also showed full. User does not know of a team allocation notification. Do not retry until assignment changes.
+- Expanded direct persistence smoke to five Top-K/batch-size transitions, unique/in-range IDs, finite nonnegative distances and self matches. This is diagnostic, not formal SQL benchmark data.
+- Review found minor test-only leak when serialization fails, missing search-step diagnostics and accepting typo modes as read. Fixed these; host-boundary RED: serialization failure returned99 due to leaked handle, typo mode returned4 instead of2. GREEN: same cases now return3/2, copy failure returns5, all resources released.
+- Added reusable smoke host wrapper to both existing test runners; all nine original cases remain green in C and C++ builds, plus the four smoke control-flow checks. Explicit LP64 overflow SKIP remains on Windows.
+- Prepared source-only baseline/candidate GPU smoke bundle under D:/OceanBase-AMD/validation/amd-bridge-5278b93b. Runner records environment, builds both, tests own/cross reload in fresh processes. Bash syntax and rejection of relative output directories verified locally; real ROCm execution remains blocked.
