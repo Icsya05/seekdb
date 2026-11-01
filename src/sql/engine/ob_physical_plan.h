@@ -371,6 +371,8 @@ public:
   bool get_is_use_auto_dop() const { return stat_.is_use_auto_dop_; }
   bool px_worker_share_plan_enabled() const { return px_worker_share_plan_enabled_; }
   void set_px_worker_share_plan_enabled(bool v) { px_worker_share_plan_enabled_ = v; }
+  common::ObIArray<uint64_t> &get_ai_column_refs() { return ai_column_refs_; }
+  const common::ObIArray<uint64_t> &get_ai_column_refs() const { return ai_column_refs_; }
 
 public:
   static const int64_t MAX_PRINTABLE_SIZE = 2 * 1024 * 1024;
@@ -385,6 +387,7 @@ private:
   DISALLOW_COPY_AND_ASSIGN(ObPhysicalPlan);
 private:
   ObPhyPlanHint phy_hint_; //hints for this plan
+  common::ObArray<uint64_t> ai_column_refs_; // table/column ID pairs, before SQL rewrites
   // root operator spec for static typing engine.
   ObOpSpec *root_op_spec_;
   int64_t param_count_;

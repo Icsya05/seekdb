@@ -1836,6 +1836,7 @@ int ObDMLResolver::resolve_basic_column_item(const TableItem &table_item,
   ObColumnRefRawExpr *col_expr = NULL;
   ObSchemaGetterGuard *schema_guard = NULL;
   ColumnItem column_item;
+  include_hidden |= params_.is_resolving_ai_catalog_;
   if (NULL == stmt) {
     stmt = get_stmt();
   }
@@ -2379,6 +2380,11 @@ int ObDMLResolver::resolve_basic_table_without_cte(const ParseNode &parse_tree, 
       alias_name.assign_ptr(alias_node->str_value_, static_cast<int32_t>(alias_node->str_len_));
     }
 
+    if (database_name.case_compare("oceanbase") == 0
+        && (table_name.case_compare("__all_ai_column") == 0
+            || table_name.case_compare("__all_ai_column_task") == 0)) {
+      return resolve_ai_column_catalog(database_name, table_name, alias_name, table_item);
+    }
     // flag IS to set larger query_timeout.
     if (is_information_schema_database_id(database_id)) {
       params_.query_ctx_->has_is_table_ = true;
@@ -2703,6 +2709,10 @@ int ObDMLResolver::resolve_table(const ParseNode &parse_tree,
       }
       case T_JSON_TABLE_EXPRESSION: {
         OZ (resolve_json_table_item(*table_node, table_item));
+        break;
+      }
+      case T_FILE_TABLE_EXPRESSION: {
+        OZ (resolve_file_table_item(*table_node, table_item));
         break;
       }
       case T_UNNEST_EXPRESSION: {
@@ -6631,6 +6641,10 @@ int ObDMLResolver::resolve_table_relation_factor_normal(const ParseNode *node,
     if (OB_SCHEMA_EAGAIN != ret) {
       ret = OB_ERR_BAD_DATABASE;
     }
+  } else if (db_name.case_compare("oceanbase") == 0
+      && (table_name.case_compare("__all_ai_column") == 0
+          || table_name.case_compare("__all_ai_column_task") == 0)) {
+    // Native AI catalogs are expanded by resolve_basic_table_without_cte.
   } else if (OB_FAIL(check_table_exist_or_not(database_id, table_name, db_name))) {
   }
 
@@ -6777,6 +6791,8 @@ int ObDMLResolver::resolve_function_table_column_item(const TableItem &table_ite
     // do nothing ...
   } else if (NULL != (col_item = stmt->get_column_item(table_item.table_id_, column_name))) {
     //exist, ignore resolve...
+  } else if (table_item.is_file_table_) {
+    ret = OB_ERR_BAD_FIELD_ERROR;
   } else {
     ObSEArray<ColumnItem, 16> col_items;
     OZ (ObResolverUtils::check_function_table_column_exist(table_item,
@@ -7475,7 +7491,9 @@ int ObDMLResolver::resolve_function_table_column_item(const TableItem &table_ite
   CK (OB_LIKELY(table_item.is_function_table()));
   CK (OB_NOT_NULL(table_item.function_table_expr_));
   if (OB_SUCC(ret)) {
-    if (table_item.function_table_expr_->get_result_type().is_ext()) {
+    if (table_item.is_file_table_) {
+      ret = resolve_file_table_columns(table_item, col_items);
+    } else if (table_item.function_table_expr_->get_result_type().is_ext()) {
       ret = resolve_function_table_column_item_udf(table_item, col_items);
     } else {
       ret = resolve_function_table_column_item_sys_func(table_item, col_items);

@@ -130,6 +130,11 @@ int ObShowResolver::check_db_access_for_show_sql(const ObShowResolverContext &sh
 
 int ObShowResolver::resolve(const ParseNode &parse_tree)
 {
+  if (parse_tree.type_ == T_SHOW_COLUMNS && parse_tree.num_child_ == 1
+      && parse_tree.children_ != nullptr && parse_tree.children_[0] != nullptr
+      && parse_tree.children_[0]->type_ == T_SELECT) {
+    return resolve_describe_select(*parse_tree.children_[0]);
+  }
   int ret = OB_SUCCESS;
   uint64_t real_id = OB_INVALID_ID;
   ObString database_name;
@@ -395,7 +400,10 @@ int ObShowResolver::resolve(const ParseNode &parse_tree)
                */
               bool is_full = (1 == ((parse_tree.children_[0]->value_)&1));
               bool is_extended = (1 == (((parse_tree.children_[0]->value_)>>1)&1));
-              if (OB_UNLIKELY(((parse_tree.children_[0]->value_)>>2) != 0)) {
+              if (parse_tree.children_[0]->value_ == 4) {
+                GEN_SQL_STEP_1(ObShowSqlSet::SHOW_AI_COLUMNS);
+                GEN_SQL_STEP_2(ObShowSqlSet::SHOW_AI_COLUMNS, OB_SYS_DATABASE_NAME, OB_ALL_COLUMN_TNAME, show_table_id);
+              } else if (OB_UNLIKELY(((parse_tree.children_[0]->value_)>>2) != 0)) {
                 ret = OB_ERR_UNEXPECTED;
               } else if (is_full) {
                 if (is_extended) {
@@ -2369,6 +2377,14 @@ DEFINE_SHOW_CLAUSE_SET(SHOW_GLOBAL_VARIABLES,
                        "SELECT /*+parallel(1)*/ variable_name AS `Variable_name`, value AS `Value` FROM %s.%s ORDER BY variable_name ASC",
                        R"(SELECT /*+parallel(1)*/ "VARIABLE_NAME" AS "VARIABLE_NAME", "VALUE" AS "VALUE" FROM %s.%s ORDER BY VARIABLE_NAME ASC)",
                        "Variable_name");
+DEFINE_SHOW_CLAUSE_SET(SHOW_AI_COLUMNS,
+                       NULL,
+                       "SELECT column_name AS `Field`, ai_column_expr AS `Expression`, "
+                       "'async' AS `Sync_mode`, ai_column_max_retries AS `Max_retries`, "
+                       "ai_column_deps AS `Dependencies`, ai_column_version AS `Definition_version` "
+                       "FROM %s.%s WHERE table_id = %ld AND (column_flags & 16) != 0 ORDER BY column_id",
+                       NULL,
+                       "Field");
 DEFINE_SHOW_CLAUSE_SET(SHOW_COLUMNS,
                        NULL,
                        "SELECT field AS `Field`, type AS `Type`, `NULL` AS `Null`, `KEY` AS `Key`, `DEFAULT` AS `Default`, extra AS `Extra` \

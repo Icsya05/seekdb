@@ -15,6 +15,7 @@
  */
 
 #define USING_LOG_PREFIX SQL_RESV
+#include "share/schema/ob_ai_column_schema.h"
 #include "sql/resolver/ddl/ob_create_table_resolver.h"
 #include "sql/resolver/dml/ob_select_resolver.h"
 #include "sql/resolver/ddl/ob_fts_index_builder_util.h"
@@ -939,6 +940,26 @@ int ObCreateTableResolver::resolve_table_elements(const ParseNode *node,
       }
     }
 
+    for (int64_t i = 0; OB_SUCC(ret) && i < table_schema.get_column_count(); ++i) {
+      ObColumnSchemaV2 *col = table_schema.get_column_schema_by_idx(i);
+      if (col->is_ai_column() && OB_FAIL(validate_ai_column(*col, table_schema))) {
+      }
+    }
+    const int64_t original_column_count = table_schema.get_column_count();
+    for (int64_t i = 0; OB_SUCC(ret) && i < original_column_count; ++i) {
+      const ObColumnSchemaV2 *col = table_schema.get_column_schema_by_idx(i);
+      if (col->is_ai_column()) {
+        for (int field = 0; OB_SUCC(ret) && field < AiColumnState::FIELD_COUNT; ++field) {
+          ObColumnSchemaV2 state;
+          if (OB_FAIL(AiColumnState::build(*col, static_cast<AiColumnState::Field>(field), gen_column_id(), state))) {
+          } else if (OB_FAIL(table_schema.add_column(state))) {
+          }
+        }
+      }
+    }
+    if (OB_SUCC(ret)) {
+      table_schema.set_max_used_column_id(cur_column_id_);
+    }
     if (OB_SUCC(ret)) {
       // todo@lanyi add related case
       if (OB_UNLIKELY(is_organization_set_to_heap() && primary_key_set_in_heap_table && NULL != primary_node_in_heap_table)) {

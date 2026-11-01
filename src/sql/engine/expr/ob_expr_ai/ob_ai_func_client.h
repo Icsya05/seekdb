@@ -25,6 +25,18 @@ namespace oceanbase
 {
 namespace common 
 {
+// A durable scheduler owns its retry budget. Keep each synchronous model SQL
+// invocation to one HTTP attempt instead of nesting the client's retry loop.
+class AiSingleAttemptGuard final
+{
+public:
+  AiSingleAttemptGuard();
+  ~AiSingleAttemptGuard();
+private:
+  bool previous_;
+  DISALLOW_COPY_AND_ASSIGN(AiSingleAttemptGuard);
+};
+
 class ObAIFuncClient: public ObAIFuncHandle
 {
 public:
@@ -34,6 +46,7 @@ public:
   void clean_up();
   void reset();
   void set_timeout_sec(int64_t timeout_sec) { timeout_sec_ = timeout_sec; }
+  void set_max_concurrency(int64_t limit) { max_concurrency_ = limit; }
   // ai function interface
   virtual int send_post(common::ObIAllocator &allocator, 
                         const ObString &url,
@@ -71,6 +84,7 @@ private:
   int64_t max_retry_times_;
   int64_t abs_timeout_ts_;
   int64_t timeout_sec_;
+  int64_t max_concurrency_;
   DISALLOW_COPY_AND_ASSIGN(ObAIFuncClient);
 };
 

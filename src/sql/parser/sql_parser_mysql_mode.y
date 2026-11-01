@@ -40,6 +40,17 @@
 #include "../../../src/sql/parser/sql_parser_mysql_mode_lex.h"
 #include "../../../src/sql/parser/sql_parser_base.h"
 
+/* Keep MySQL DESC SELECT as EXPLAIN unless a file table is present. */
+static int contains_file_table(const ParseNode *node, int depth)
+{
+  if (node == NULL || depth > 256) { return 0; }
+  if (node->type_ == T_FILE_TABLE_EXPRESSION) { return 1; }
+  for (int64_t i = 0; node->children_ != NULL && i < node->num_child_; ++i) {
+    if (contains_file_table(node->children_[i],depth+1)) { return 1; }
+  }
+  return 0;
+}
+
 #define GEN_EXPLAN_STMT(no_use, explain_stmt, explain_type, display_type, stmt, into_table, set_statement_id) \
   (void)(no_use); \
   ParseNode *type_node = NULL; \
@@ -57,6 +68,7 @@
 %destructor {destroy_tree($$);}<node>
 %destructor {oceanbase::common::ob_free($$);}<str_value_>
 
+%type <node> opt_ai_column_options ai_column_options ai_column_option
 %token <node> NAME_OB
 %token <node> STRING_VALUE
 %token <node> NATIONAL_LITERAL
@@ -384,6 +396,7 @@ END_P SET_VAR DELIMITER
 %type <node> date_unit date_params timestamp_params
 %type <node> drop_table_stmt table_list drop_view_stmt table_or_tables
 %type <node> explain_stmt explainable_stmt format_name kill_stmt create_outline_stmt alter_outline_stmt drop_outline_stmt opt_outline_target
+%type <node> copy_file_stmt copy_file_source copy_file_options copy_file_option_list copy_file_option
 %type <node> expr_list expr expr_const conf_const simple_expr simple_expr_list expr_or_default bit_expr bool_pri predicate explain_or_desc pl_expr_stmt
 %type <node> column_ref multi_delete_table
 %type <node> case_expr func_expr in_expr sub_query_flag search_expr
@@ -556,6 +569,7 @@ opt_end_p:
 /* only preparable statement will set question mark size */
 stmt:
     select_stmt             { $$ = $1; question_mark_issue($$, result); }
+  | copy_file_stmt          { $$ = $1; question_mark_issue($$, result); }
   | insert_stmt             { $$ = $1; question_mark_issue($$, result); }
   | create_table_stmt       {
     $$ = $1;
@@ -589,7 +603,7 @@ stmt:
   | prepare_stmt            { $$ = $1; question_mark_issue($$, result); }
   | variable_set_stmt       { $$ = $1; question_mark_issue($$, result); }
   | execute_stmt            { $$ = $1; check_question_mark($$, result); }
-  | alter_table_stmt        { $$ = $1; check_question_mark($$, result); }
+  | alter_table_stmt        { $$ = $1; if ($$->type_ != T_UPDATE) { check_question_mark($$, result); } }
   | alter_system_stmt       { $$ = $1; check_question_mark($$, result); }
   | deallocate_prepare_stmt { $$ = $1; check_question_mark($$, result); }
   | create_user_stmt        { $$ = $1; check_question_mark($$, result); }
@@ -4849,6 +4863,14 @@ column_definition_ref data_type opt_column_attribute_list opt_column_reference o
   merge_nodes(attributes, result, T_COLUMN_ATTRIBUTES, $10);
   malloc_non_terminal_node($$, result->malloc_pool_, T_COLUMN_DEFINITION, 7, $1, $2, attributes, $7, $9, $12, $4);
 }
+| column_definition_ref data_type opt_collation AI COLUMN '(' expr ')' opt_ai_column_options opt_generated_column_attribute_list opt_position_column
+{
+  ParseNode *attributes = NULL;
+  set_data_type_collation($2, $3, true, false);
+  dup_expr_string($7, result, @7.first_column, @7.last_column);
+  merge_nodes(attributes, result, T_COLUMN_ATTRIBUTES, $10);
+  malloc_non_terminal_node($$, result->malloc_pool_, T_COLUMN_DEFINITION, 6, $1, $2, attributes, $11, $7, $9);
+}
 | column_definition_ref SERIAL opt_column_attribute_list opt_position_column 
 {
   ParseNode *unsigned_bigint_type = NULL;
@@ -4875,6 +4897,23 @@ column_definition_ref data_type opt_column_attribute_list opt_column_reference o
   merge_nodes(attributes, result, T_COLUMN_ATTRIBUTES, attributes);
   malloc_non_terminal_node($$, result->malloc_pool_, T_COLUMN_DEFINITION, 4, $1, unsigned_bigint_type, attributes, $4);
 }
+;
+
+opt_ai_column_options:
+WITH '(' ai_column_options ')'
+{
+  merge_nodes($$, result, T_EXPR_LIST, $3);
+}
+| /*empty*/ { $$ = NULL; }
+;
+ai_column_options:
+ai_column_option { $$ = $1; }
+| ai_column_options ',' ai_column_option
+{ malloc_non_terminal_node($$, result->malloc_pool_, T_LINK_NODE, 2, $1, $3); }
+;
+ai_column_option:
+relation_name COMP_EQ expr
+{ malloc_non_terminal_node($$, result->malloc_pool_, T_ASSIGN_ITEM, 2, $1, $3); }
 ;
 
 constraint_definition:
@@ -8506,6 +8545,43 @@ opt_lock_type:
 }
 ;
 
+copy_file_stmt:
+COPY copy_file_source TO literal copy_file_options
+{
+  $$ = $2;
+  if ($$->children_[PARSE_SELECT_INTO] != NULL || $$->children_[PARSE_SELECT_INTO_EXTRA] != NULL) {
+    yyerror(&@1, result, "COPY source cannot contain INTO"); YYABORT;
+  }
+  malloc_non_terminal_node($$->children_[PARSE_SELECT_INTO_EXTRA], result->malloc_pool_, T_INTO_OUTFILE, 2, $4, $5);
+}
+;
+copy_file_source:
+select_with_parens { $$ = $1; }
+| relation_factor
+{
+  ParseNode *star = NULL, *project = NULL, *table = NULL;
+  malloc_terminal_node(star, result->malloc_pool_, T_STAR);
+  malloc_non_terminal_node(project, result->malloc_pool_, T_PROJECT_STRING, 1, star);
+  malloc_non_terminal_node(table, result->malloc_pool_, T_ORG, 4, $1, NULL, NULL, NULL);
+  malloc_select_node($$, result->malloc_pool_);
+  malloc_non_terminal_node($$->children_[PARSE_SELECT_SELECT], result->malloc_pool_, T_PROJECT_LIST, 1, project);
+  malloc_non_terminal_node($$->children_[PARSE_SELECT_FROM], result->malloc_pool_, T_FROM_LIST, 1, table);
+}
+;
+copy_file_options:
+/* EMPTY */ { $$ = NULL; }
+| '(' copy_file_option_list ')' { merge_nodes($$, result, T_EXPR_LIST, $2); }
+;
+copy_file_option_list:
+copy_file_option { $$ = $1; }
+| copy_file_option_list ',' copy_file_option { malloc_non_terminal_node($$, result->malloc_pool_, T_LINK_NODE, 2, $1, $3); }
+;
+copy_file_option:
+relation_name { malloc_non_terminal_node($$, result->malloc_pool_, T_ALIAS, 2, $1, NULL); }
+| relation_name literal { malloc_non_terminal_node($$, result->malloc_pool_, T_ALIAS, 2, $1, $2); }
+| relation_name relation_name { malloc_non_terminal_node($$, result->malloc_pool_, T_ALIAS, 2, $1, $2); }
+;
+
 no_table_select:
 select_with_opt_hint opt_query_expression_option_list select_expr_list into_opt
 FROM DUAL opt_where opt_groupby opt_having opt_named_windows
@@ -11258,6 +11334,18 @@ relation_factor %prec LOWER_PARENS
 {
   malloc_non_terminal_node($$, result->malloc_pool_, T_TABLE_COLLECTION_EXPRESSION, 2, $3, $6);
 }
+| NAME_OB '(' expr_list ')' %prec LOWER_PARENS
+{
+  malloc_non_terminal_node($$, result->malloc_pool_, T_FILE_TABLE_EXPRESSION, 3, $1, $3, NULL);
+}
+| NAME_OB '(' expr_list ')' relation_name
+{
+  malloc_non_terminal_node($$, result->malloc_pool_, T_FILE_TABLE_EXPRESSION, 3, $1, $3, $5);
+}
+| NAME_OB '(' expr_list ')' AS relation_name
+{
+  malloc_non_terminal_node($$, result->malloc_pool_, T_FILE_TABLE_EXPRESSION, 3, $1, $3, $6);
+}
 ;
 
 dml_table_name:
@@ -12265,7 +12353,14 @@ explain_or_desc relation_factor opt_desc_column_option
   malloc_non_terminal_node($$, result->malloc_pool_, T_SHOW_COLUMNS, 4, $$, $2, NULL, $3);
 }
 
-| explain_or_desc explainable_stmt { GEN_EXPLAN_STMT($1, $$, 0, 0, $2, NULL, NULL);}
+| explain_or_desc explainable_stmt
+{
+  if ($1->value_ == 1 && $2->type_ == T_SELECT && contains_file_table($2,0)) {
+    malloc_non_terminal_node($$, result->malloc_pool_, T_SHOW_COLUMNS, 1, $2);
+  } else {
+    GEN_EXPLAN_STMT($1, $$, 0, 0, $2, NULL, NULL);
+  }
+}
 | explain_or_desc PRETTY explainable_stmt { GEN_EXPLAN_STMT($1, $$, 0, T_PRETTY, $3, NULL, NULL);}
 | explain_or_desc PRETTY_COLOR explainable_stmt { GEN_EXPLAN_STMT($1, $$, 0, T_PRETTY_COLOR, $3, NULL, NULL);}
 
@@ -12305,9 +12400,9 @@ explain_or_desc relation_factor opt_desc_column_option
 ;
 
 explain_or_desc:
-EXPLAIN {$$ = NULL;}
-| DESCRIBE {$$ = NULL;}
-| DESC  {$$ = NULL;}
+EXPLAIN { malloc_terminal_node($$, result->malloc_pool_, T_INT); $$->value_ = 0; }
+| DESCRIBE { malloc_terminal_node($$, result->malloc_pool_, T_INT); $$->value_ = 1; }
+| DESC { malloc_terminal_node($$, result->malloc_pool_, T_INT); $$->value_ = 1; }
 ;
 
 explainable_stmt:
@@ -12644,6 +12739,13 @@ SHOW opt_extended_or_full TABLES opt_from_or_in_database_clause opt_show_conditi
   (void)$4;
   malloc_terminal_node($$, result->malloc_pool_, T_INT);
   $$->value_ = $2[0];
+  malloc_non_terminal_node($$, result->malloc_pool_, T_SHOW_COLUMNS, 4, $$, $5, $6, $7);
+}
+| SHOW AI COLUMNS from_or_in relation_factor opt_from_or_in_database_clause opt_show_condition
+{
+  (void)$4;
+  malloc_terminal_node($$, result->malloc_pool_, T_INT);
+  $$->value_ = 4;
   malloc_non_terminal_node($$, result->malloc_pool_, T_SHOW_COLUMNS, 4, $$, $5, $6, $7);
 }
 | SHOW TABLE STATUS opt_from_or_in_database_clause opt_show_condition
@@ -14658,6 +14760,41 @@ alter_with_opt_hint TABLE relation_factor alter_table_actions
   ParseNode *table_actions = NULL;
   merge_nodes(table_actions, result, T_ALTER_TABLE_ACTION_LIST, $4);
   malloc_non_terminal_node($$, result->malloc_pool_, T_ALTER_TABLE, 4, $3, table_actions, NULL, $1);
+  $$->value_ = 0;
+}
+| alter_with_opt_hint TABLE relation_factor NAME_OB AI COLUMN column_name opt_where
+{
+  (void)($5);
+  if ($4->str_len_ != 5 || strncasecmp($4->str_value_, "retry", 5) != 0 || $4->is_input_quoted_) {
+    yyerror(&@4, result, "expected RETRY AI COLUMN");
+    YYERROR;
+  }
+  ParseNode *tables = NULL;
+  malloc_non_terminal_node(tables, result->malloc_pool_, T_TABLE_REFERENCES, 1, $3);
+  malloc_non_terminal_node($$, result->malloc_pool_, T_UPDATE, 11,
+                          NULL, tables, $7, $8, NULL, NULL, NULL, $1, NULL, NULL, NULL);
+  // RETRY is transactional DML. The resolver supplies only the selected AI
+  // column's invalidation assignments; users cannot supply arbitrary writes.
+  // UPDATE_LIST is the target identifier rather than a user assignment list.
+  $7->value_ = 0;
+  $$->value_ = 0;
+}
+| alter_with_opt_hint TABLE relation_factor NAME_OB AI COLUMN column_name opt_where ',' alter_table_actions
+{
+  (void)($5);
+  (void)($10);
+  if ($4->str_len_ != 5 || strncasecmp($4->str_value_, "retry", 5) != 0 || $4->is_input_quoted_) {
+    yyerror(&@4, result, "expected RETRY AI COLUMN");
+    YYERROR;
+  }
+  ParseNode *tables = NULL;
+  malloc_non_terminal_node(tables, result->malloc_pool_, T_TABLE_REFERENCES, 1, $3);
+  malloc_non_terminal_node($$, result->malloc_pool_, T_UPDATE, 11,
+                          NULL, tables, $7, $8, NULL, NULL, NULL, $1, NULL, NULL, NULL);
+  // RETRY is transactional DML. The resolver supplies only the selected AI
+  // column's invalidation assignments; users cannot supply arbitrary writes.
+  // UPDATE_LIST is the target identifier rather than a user assignment list.
+  $7->value_ = 1;
   $$->value_ = 0;
 }
 ;

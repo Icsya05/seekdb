@@ -16,6 +16,7 @@
 
 #define USING_LOG_PREFIX RS
 
+#include "share/schema/ob_ai_column_schema.h"
 #include "share/rc/ob_server_runtime.h"
 #include "config_bridge.h"
 #include <algorithm>
@@ -7455,7 +7456,11 @@ int ObDDLService::fill_new_column_attributes(
     new_column_schema.set_srs_id(alter_column_schema.get_srs_id());
     new_column_schema.set_skip_index_attr(alter_column_schema.get_skip_index_attr().get_packed_value());
     new_column_schema.set_lob_chunk_size(alter_column_schema.get_lob_chunk_size());
-    if (OB_FAIL(new_column_schema.get_local_session_var().deep_copy(alter_column_schema.get_local_session_var()))) {
+    new_column_schema.set_ai_column_max_retries(alter_column_schema.get_ai_column_max_retries());
+    new_column_schema.set_ai_column_version(alter_column_schema.get_ai_column_version());
+    if (OB_FAIL(new_column_schema.set_ai_column_expr(alter_column_schema.get_ai_column_expr()))) {
+    } else if (OB_FAIL(new_column_schema.set_ai_column_deps(alter_column_schema.get_ai_column_deps()))) {
+    } else if (OB_FAIL(new_column_schema.get_local_session_var().deep_copy(alter_column_schema.get_local_session_var()))) {
     }
   }
   return ret;
@@ -7827,6 +7832,20 @@ int ObDDLService::add_new_column_to_table_schema(
       if (update_inner_table) {
         if (OB_FAIL(ddl_operator->insert_single_column(*trans,
                 new_table_schema, alter_column_schema))) {
+        }
+      }
+    }
+  }
+  if (OB_SUCC(ret) && alter_column_schema.is_ai_column()) {
+    for (int field = 0; OB_SUCC(ret) && field < AiColumnState::FIELD_COUNT; ++field) {
+      AlterColumnSchema state;
+      if (OB_FAIL(AiColumnState::build(alter_column_schema, static_cast<AiColumnState::Field>(field),
+                                       new_table_schema.get_max_used_column_id() + 1, state))) {
+      } else {
+        state.alter_type_ = OB_DDL_ADD_COLUMN;
+        if (OB_FAIL(add_new_column_to_table_schema(origin_table_schema, alter_table_schema,
+                       tz_info_wrap, local_session_var, allocator, new_table_schema, state,
+                       gen_col_expr_arr, schema_guard, curr_udt_set_id, ddl_operator, trans))) {
         }
       }
     }
@@ -22532,6 +22551,7 @@ int ObDDLService::drop_column_online(
     ::localtime_r(&t.tv_sec, &tm);
 #endif
     new_column_schema->set_unused();
+    new_column_schema->del_column_flag(AI_COLUMN_FLAG | AI_COLUMN_STATE_FLAG);
     new_column_schema->set_prev_column_id(new_column_schema->get_column_id());
     new_column_schema->set_next_column_id(new_column_schema->get_column_id());
     new_column_schema->drop_not_null_cst(); // change column to null.
@@ -22546,6 +22566,15 @@ int ObDDLService::drop_column_online(
     } else if (OB_FAIL(ddl_operator.update_single_column(trans, origin_table_schema, new_table_schema,
                                                                    *new_column_schema, true/*need_del_stats*/))) {
     } else if (OB_FAIL(alter_table_update_index_and_view_column(new_table_schema, *new_column_schema, ddl_operator, trans))) {
+    }
+  }
+  for (int f = 0; OB_SUCC(ret) && orig_column_schema != nullptr && orig_column_schema->is_ai_column()
+                  && f < AiColumnState::FIELD_COUNT; ++f) {
+    ObSqlString field;
+    if (OB_FAIL(AiColumnState::name(orig_column_schema->get_column_id(), static_cast<AiColumnState::Field>(f), field))) {
+    } else if (OB_FAIL(SMART_CALL(drop_column_online(schema_guard, origin_table_schema, field.string(),
+                   new_tbl_visible_cols_cnt_after_alter, last_drop_column_id,
+                   ddl_operator, trans, new_table_schema, update_column_name_set)))) {
     }
   }
   return ret;
@@ -22571,6 +22600,13 @@ int ObDDLService::drop_column_offline(const ObTableSchema &origin_table_schema,
   } else if (OB_FAIL(drop_column_update_new_table(orig_column_schema->get_column_name_str(), new_table_schema))) {
   } else {
     // do nothing
+  }
+  for (int f = 0; OB_SUCC(ret) && orig_column_schema != nullptr && orig_column_schema->is_ai_column()
+                  && f < AiColumnState::FIELD_COUNT; ++f) {
+    ObSqlString field;
+    if (OB_FAIL(AiColumnState::name(orig_column_schema->get_column_id(), static_cast<AiColumnState::Field>(f), field))) {
+    } else if (OB_FAIL(drop_column_update_new_table(field.string(), new_table_schema))) {
+    }
   }
   return ret;
 }

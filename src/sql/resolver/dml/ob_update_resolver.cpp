@@ -16,6 +16,7 @@
 
 #define USING_LOG_PREFIX SQL_RESV
 #include "sql/resolver/dml/ob_update_resolver.h"
+#include "share/schema/ob_ai_column_schema.h"
 
 namespace oceanbase
 {
@@ -81,7 +82,9 @@ int ObUpdateResolver::resolve(const ParseNode &parse_tree)
     current_scope_ = T_UPDATE_SCOPE;
     // resolve assignments
     ParseNode *assign_list = parse_tree.children_[UPDATE_LIST];
-    if (OB_ISNULL(assign_list) || OB_UNLIKELY(T_ASSIGN_LIST != assign_list->type_)) {
+    if (assign_list != nullptr && assign_list->type_ == T_IDENT) {
+      ret = resolve_ai_column_retry(parse_tree, tables_assign);
+    } else if (OB_ISNULL(assign_list) || OB_UNLIKELY(T_ASSIGN_LIST != assign_list->type_)) {
       ret = OB_ERR_UNEXPECTED;
       LOG_WARN("invalid assign list node", K(assign_list));
     } else if (OB_FAIL(resolve_assignments(*assign_list,
@@ -149,6 +152,66 @@ int ObUpdateResolver::resolve(const ParseNode &parse_tree)
     } else if (OB_FAIL(update_stmt->check_dml_source_from_join())) {
     } else if (OB_FAIL(check_safe_update_mode(update_stmt))) {
     } else { /*do nothing*/ }
+  }
+  return ret;
+}
+
+namespace
+{
+int bind_ai_retry_status(ParseNode *node, const ObString &status)
+{
+  int ret = OB_SUCCESS;
+  if (node == nullptr) {
+  } else if (node->type_ == T_SELECT) {
+    ret = OB_NOT_SUPPORTED;
+    LOG_USER_ERROR(OB_NOT_SUPPORTED, "subqueries in RETRY AI COLUMN conditions");
+  } else if (node->type_ == T_COLUMN_REF && node->num_child_ == 3
+      && node->children_[0] == nullptr && node->children_[1] == nullptr
+      && node->children_[2] != nullptr && !node->children_[2]->is_input_quoted_
+      && ObString(node->children_[2]->str_len_, node->children_[2]->str_value_).case_compare("status") == 0) {
+    node->children_[2]->str_value_ = status.ptr();
+    node->children_[2]->str_len_ = status.length();
+  } else {
+    for (int64_t i = 0; OB_SUCC(ret) && i < node->num_child_; ++i) {
+      ret = SMART_CALL(bind_ai_retry_status(node->children_[i], status));
+    }
+  }
+  return ret;
+}
+} // namespace
+
+int ObUpdateResolver::resolve_ai_column_retry(const ParseNode &parse_tree,
+                                             ObIArray<ObTableAssignment> &assignments)
+{
+  int ret = OB_SUCCESS;
+  ObUpdateStmt *stmt = get_update_stmt();
+  const TableItem *table = nullptr;
+  const ObTableSchema *schema = nullptr;
+  const ObColumnSchemaV2 *column = nullptr;
+  const ParseNode *name = parse_tree.children_[UPDATE_LIST];
+  ObSqlString state_name;
+  ObString persistent_name;
+  ObTableAssignment assignment;
+  if (OB_ISNULL(stmt) || OB_ISNULL(name) || stmt->get_table_items().count() != 1
+      || OB_ISNULL(table = stmt->get_table_items().at(0)) || !table->is_basic_table()) {
+    ret = OB_INVALID_ARGUMENT;
+  } else if (name->value_ == 1) {
+    ret = OB_NOT_SUPPORTED;
+    LOG_USER_ERROR(OB_NOT_SUPPORTED, "combining AI COLUMN RETRY with another ALTER action");
+  } else if (OB_FAIL(schema_checker_->get_table_schema(table->ref_id_, schema))) {
+  } else if (OB_ISNULL(schema) || !schema->is_user_table()
+      || OB_ISNULL(column = schema->get_column_schema(ObString(name->str_len_, name->str_value_)))
+      || !column->is_ai_column()) {
+    ret = OB_NOT_SUPPORTED;
+    LOG_USER_ERROR(OB_NOT_SUPPORTED, "retrying a column that is not an AI column");
+  } else if (OB_FAIL(AiColumnState::name(column->get_column_id(), AiColumnState::STATUS, state_name))) {
+  } else if (OB_FAIL(ob_write_string(*allocator_, state_name.string(), persistent_name))) {
+  } else if (OB_FAIL(bind_ai_retry_status(parse_tree.children_[WHERE], persistent_name))) {
+  } else {
+    assignment.table_id_ = table->table_id_;
+    if (OB_FAIL(reset_ai_column(assignment, *table, *column))) {
+    } else if (OB_FAIL(assignments.push_back(assignment))) {
+    }
   }
   return ret;
 }

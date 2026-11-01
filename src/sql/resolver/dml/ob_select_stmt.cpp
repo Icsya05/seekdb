@@ -51,6 +51,7 @@ int ObSelectIntoItem::deep_copy(ObIAllocator &allocator,
 {
   int ret = OB_SUCCESS;
   into_type_ = other.into_type_;
+  is_file_copy_ = other.is_file_copy_;
   outfile_name_ = other.outfile_name_;
   field_str_ = other.field_str_;
   line_str_ = other.line_str_;

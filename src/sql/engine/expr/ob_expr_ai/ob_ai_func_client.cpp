@@ -16,21 +16,72 @@
 
 #define USING_LOG_PREFIX SQL_ENG
 #include "ob_ai_func_client.h"
+#include <map>
+#include <mutex>
+#include <string>
 
 namespace oceanbase 
 {
 namespace common 
 {
+namespace {
+struct AiRequestSlots {
+  std::mutex mutex;
+  std::map<std::string,int64_t> active;
+};
+AiRequestSlots &request_slots() { static AiRequestSlots slots; return slots; }
+class AiRequestPermit {
+public:
+  ~AiRequestPermit() {
+    if (held_) {
+      auto &slots = request_slots();
+      std::lock_guard<std::mutex> lock(slots.mutex);
+      auto found = slots.active.find(url_);
+      if (found != slots.active.end() && --found->second == 0) { slots.active.erase(found); }
+    }
+  }
+  int acquire(const char *url, int64_t limit, int64_t deadline) {
+    if (limit == 0) { return OB_SUCCESS; } // Non-endpoint clients retain their existing path.
+    if (url == nullptr || limit < 1 || limit > 1024) { return OB_INVALID_ARGUMENT; }
+    url_ = url;
+    while (true) {
+      int ret = THIS_WORKER.check_status();
+      if (ret != OB_SUCCESS) { return ret; }
+      if (ObTimeUtility::current_time() >= deadline) { return OB_TIMEOUT; }
+      {
+        auto &slots = request_slots();
+        std::lock_guard<std::mutex> lock(slots.mutex);
+        auto found = slots.active.find(url_);
+        if (found == slots.active.end()) {
+          if (slots.active.size() >= 4096) { return OB_SIZE_OVERFLOW; }
+          slots.active.emplace(url_,1); held_ = true; return OB_SUCCESS;
+        } else if (found->second < limit) {
+          ++found->second; held_ = true; return OB_SUCCESS;
+        }
+      }
+      ob_usleep(1000);
+    }
+  }
+private:
+  std::string url_;
+  bool held_ = false;
+};
+}
 
 const int64_t ObAIFuncClient::CURL_MAX_TIMEOUT_SEC = INT_MAX/1000;
+namespace { thread_local bool ai_single_attempt = false; }
+AiSingleAttemptGuard::AiSingleAttemptGuard() : previous_(ai_single_attempt) { ai_single_attempt = true; }
+AiSingleAttemptGuard::~AiSingleAttemptGuard() { ai_single_attempt = previous_; }
+
 ObAIFuncClient::ObAIFuncClient()
     : allocator_(nullptr), url_(nullptr), header_list_(nullptr),
       curlm_(nullptr), curl_(nullptr), curl_handles_(), response_buffers_() 
 {
   is_finished_.store(false);
   abs_timeout_ts_ = 0;
-  max_retry_times_ = 3;  // default retry 3 times
+  max_retry_times_ = ai_single_attempt ? 0 : 3;  // ordinary AI calls retain their retries
   timeout_sec_ = 60; // default timeout 1 minute
+  max_concurrency_ = 0;
 }
 
 void ObAIFuncClient::reset() 
@@ -96,7 +147,7 @@ int ObAIFuncClient::init(common::ObIAllocator &allocator, const common::ObString
         } else if (OB_ISNULL(header_list_ = curl_slist_append(header_list_, header_c_str.ptr()))) {
           ret = OB_ERR_UNEXPECTED;
         } else {
-          LOG_DEBUG("ai_function, header:", K(headers.at(i)));
+          LOG_DEBUG("AI request header configured", K(i));
         }
       }
     }
@@ -138,7 +189,7 @@ int ObAIFuncClient::send_post(ObJsonObject *data, ObJsonObject *&response)
     }
   }
   if (OB_SUCC(ret)) {
-    CURLcode res;
+    CURLcode res = CURLE_OK;
     ObIJsonBase *j_tree = NULL;
     ObStringBuffer response_buf(allocator_);
     int64_t http_code = 0;
@@ -147,22 +198,28 @@ int ObAIFuncClient::send_post(ObJsonObject *data, ObJsonObject *&response)
     // retry if need
     for (int64_t i = 0; OB_SUCC(ret) && i <= max_retry_times_; ++i) {
       http_code = 0;
-      if (CURLE_OK != (res = curl_easy_perform(curl_))) {
-        LOG_WARN("perform curl failed", K(res));
-      } else if (CURLE_OK != (res = curl_easy_getinfo(curl_, CURLINFO_RESPONSE_CODE, &http_code))) {
-        LOG_WARN("curl get response code failed", K(res));
-      } 
+      response_buf.reset();
+      {
+        AiRequestPermit permit;
+        if (OB_FAIL(permit.acquire(url_,max_concurrency_,abs_timeout_ts_))) { break; }
+        int64_t remaining = abs_timeout_ts_ - ObTimeUtility::current_time();
+        if (remaining <= 0) { ret = OB_TIMEOUT; break; }
+        res = curl_easy_setopt(curl_,CURLOPT_TIMEOUT_MS,static_cast<long>(std::min<int64_t>(remaining/1000+1,INT_MAX)));
+        if (res == CURLE_OK) { res = curl_easy_perform(curl_); }
+        if (res == CURLE_OK) { res = curl_easy_getinfo(curl_,CURLINFO_RESPONSE_CODE,&http_code); }
+      }
       if (is_timeout()) {
         ret = OB_TIMEOUT;
-      } else if (res != CURLE_OK) {
-        // retry
-      } else if (!is_retryable_status_code(http_code)) {
+      } else if (res == CURLE_OK && !is_retryable_status_code(http_code)) {
         break;
-      } else {
+      } else if (i < max_retry_times_) {
         LOG_WARN("retryable http status code", K(http_code), K(i));
         int64_t delay_ms = 1000 * (1 << i) + rand() % 1000;
-        ob_usleep(delay_ms * 1000);
-        response_buf.reset();
+        int64_t until = std::min(abs_timeout_ts_,ObTimeUtility::current_time()+delay_ms*1000);
+        while (OB_SUCC(ret) && ObTimeUtility::current_time() < until) {
+          ret = THIS_WORKER.check_status();
+          ob_usleep(std::max<int64_t>(0,std::min<int64_t>(10000,until-ObTimeUtility::current_time())));
+        }
       }
     }
     if (OB_SUCC(ret)) {
@@ -171,7 +228,8 @@ int ObAIFuncClient::send_post(ObJsonObject *data, ObJsonObject *&response)
         ret = OB_CURL_ERROR;
         char http_code_str[1024];
         ObString err_msg = response_buf.string();
-        snprintf(http_code_str, sizeof(http_code_str), "http status code: %ld, error message: %s", http_code, err_msg.ptr());
+        snprintf(http_code_str, sizeof(http_code_str), "http status code: %ld, error message: %.*s", http_code,
+                 static_cast<int>(std::min<int64_t>(err_msg.length(),800)), err_msg.ptr());
         ObString ob_http_code_str(http_code_str);
         FORWARD_USER_ERROR(ret, http_code_str);
       }
@@ -182,6 +240,8 @@ int ObAIFuncClient::send_post(ObJsonObject *data, ObJsonObject *&response)
               allocator_, response_buf.string(), ObJsonInType::JSON_TREE,
               ObJsonInType::JSON_TREE, j_tree))) {
           ret = OB_ERR_INVALID_JSON_TEXT;
+        } else if (OB_ISNULL(j_tree) || j_tree->json_type() != ObJsonNodeType::J_OBJECT) {
+          ret = OB_INVALID_DATA;
         } else {
           response = static_cast<ObJsonObject *>(j_tree);
         }
@@ -279,12 +339,23 @@ int ObAIFuncClient::send_post_batch(common::ObIAllocator &allocator,
   if (OB_SUCC(ret)) {
     if (OB_FAIL(init(allocator, url, headers))) {
     }
+    if (max_concurrency_ > 0) {
+      // Each request acquires a shared URL permit; a multi handle must not
+      // bypass the limit by submitting every request at once.
+      for (int64_t i = 0; OB_SUCC(ret) && i < data_array.count(); ++i) {
+        ObJsonObject *response = nullptr;
+        if (OB_FAIL(send_post(data_array.at(i),response))) { }
+        else { ret = responses.push_back(response); }
+      }
+      if (OB_FAIL(ret)) { responses.reuse(); }
+      return ret;
+    }
     // retry if need
-    for (int64_t i = 0; OB_SUCC(ret) && i < max_retry_times_; ++i) {
+    for (int64_t i = 0; OB_SUCC(ret) && i < (max_retry_times_ == 0 ? 1 : max_retry_times_); ++i) {
       ret = send_post_batch(data_array, responses);
       if (is_timeout()) {
         ret = OB_TIMEOUT;
-      } else if (OB_CURL_ERROR == ret) {
+      } else if (OB_CURL_ERROR == ret && max_retry_times_ > 0) {
         ret = OB_SUCCESS;
         int64_t delay_ms = 1000 * (1 << i) + rand() % 1000;
         ob_usleep(delay_ms * 1000);
@@ -452,12 +523,14 @@ void ObAIFuncClient::clean_up()
 size_t ObAIFuncClient::write_callback(void *contents, size_t size, size_t nmemb, void *userp) 
 {
   int ret = OB_SUCCESS;
+  constexpr size_t response_limit = 16 * 1024 * 1024;
+  if (userp == nullptr || (nmemb != 0 && size > response_limit/nmemb)) { return 0; }
   size_t total_size = size * nmemb;
   if (OB_ISNULL(contents)) {
     ret = OB_INVALID_ARGUMENT;
   } else if (total_size > 0) {
     ObStringBuffer &result = *static_cast<ObStringBuffer *>(userp);
-    result.reserve(total_size);
+    if (result.length() < 0 || static_cast<size_t>(result.length()) > response_limit-total_size) { return 0; }
     if (OB_FAIL(result.append(static_cast<const char *>(contents), total_size, 0))) {
     } else {
       LOG_DEBUG("ai_function, http response", K(result.string()));

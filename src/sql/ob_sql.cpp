@@ -17,6 +17,7 @@
 #define USING_LOG_PREFIX SQL
 #include "config_bridge.h"
 #include "sql/ob_sql.h"
+#include "sql/engine/ai_column_read_guard.h"
 #include "lib/json/ob_json_print_utils.h"
 #include "lib/stat/ob_diagnostic_info_guard.h"
 #include "query/runtime/ob_query_runtime_environment.h"
@@ -2405,6 +2406,7 @@ int ObSql::generate_plan(ParseResult &parse_result,
     }
 
     if (OB_FAIL(ret)) {
+    } else if (OB_FAIL(AiColumnReadGuard::collect(*stmt, phy_plan->get_ai_column_refs()))) {
     } else if (OB_FAIL(transform_stmt(&stmt->get_query_ctx()->sql_schema_guard_,
                                       opt_stat_mgr_,
                                       &self_addr_,

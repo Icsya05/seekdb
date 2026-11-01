@@ -77,11 +77,15 @@ int ObColumnSchemaV2::assign(const ObColumnSchemaV2 &src_schema)
     sub_type_ = src_schema.sub_type_;
     skip_index_attr_ = src_schema.skip_index_attr_;
     lob_chunk_size_ = src_schema.lob_chunk_size_;
+    ai_column_max_retries_ = src_schema.ai_column_max_retries_;
+    ai_column_version_ = src_schema.ai_column_version_;
 
     if (OB_FAIL(deep_copy_obj(src_schema.orig_default_value_, orig_default_value_))) {
     } else if (OB_FAIL(deep_copy_obj(src_schema.cur_default_value_, cur_default_value_))) {
     } else if (OB_FAIL(deep_copy_str(src_schema.column_name_, column_name_))) {
     } else if (OB_FAIL(deep_copy_str(src_schema.comment_, comment_))) {
+    } else if (OB_FAIL(set_ai_column_expr(src_schema.ai_column_expr_))) {
+    } else if (OB_FAIL(set_ai_column_deps(src_schema.ai_column_deps_))) {
     } else if (OB_FAIL(set_extended_type_info(src_schema.extended_type_info_))) {
     } else if (src_schema.column_ref_idxs_ != NULL) {
       if (OB_FAIL(alloc_column_ref_set())) {
@@ -120,6 +124,7 @@ int64_t ObColumnSchemaV2::get_convert_size() const
   convert_size += cur_default_value_.get_deep_copy_size();
   convert_size += column_name_.length() + 1;
   convert_size += comment_.length() + 1;
+  convert_size += ai_column_expr_.length() + ai_column_deps_.length() + 2;
   if (column_ref_idxs_ != NULL) {
     convert_size += sizeof(ColumnReferenceSet);
   }
@@ -188,6 +193,10 @@ void ObColumnSchemaV2::reset()
   skip_index_attr_.reset();
   lob_chunk_size_ = OB_DEFAULT_LOB_CHUNK_SIZE;
   local_session_vars_.reset();
+  ai_column_expr_.reset();
+  ai_column_deps_.reset();
+  ai_column_max_retries_ = 2;
+  ai_column_version_ = 0;
   ObSchema::reset();
 }
 
@@ -236,6 +245,7 @@ OB_DEF_SERIALIZE(ObColumnSchemaV2)
                 skip_index_attr_,
                 lob_chunk_size_,
                 local_session_vars_);
+    LST_DO_CODE(OB_UNIS_ENCODE, ai_column_expr_, ai_column_deps_, ai_column_max_retries_, ai_column_version_);
   }
 
   return ret;
@@ -248,6 +258,8 @@ OB_DEF_DESERIALIZE(ObColumnSchemaV2)
   ObObj cur_default_value;
   ObString column_name;
   ObString comment;
+  ObString ai_expr;
+  ObString ai_deps;
   bool has_column_ref = false;
 
   LST_DO_CODE(OB_UNIS_DECODE,
@@ -296,6 +308,10 @@ OB_DEF_DESERIALIZE(ObColumnSchemaV2)
                 skip_index_attr_,
                 lob_chunk_size_,
                 local_session_vars_);
+    LST_DO_CODE(OB_UNIS_DECODE, ai_expr, ai_deps, ai_column_max_retries_, ai_column_version_);
+    if (OB_SUCC(ret) && OB_FAIL(set_ai_column_expr(ai_expr))) {
+    } else if (OB_SUCC(ret) && OB_FAIL(set_ai_column_deps(ai_deps))) {
+    }
   }
   return ret;
 }
@@ -341,6 +357,7 @@ OB_DEF_SERIALIZE_SIZE(ObColumnSchemaV2)
               skip_index_attr_,
               lob_chunk_size_,
               local_session_vars_);
+  LST_DO_CODE(OB_UNIS_ADD_LEN, ai_column_expr_, ai_column_deps_, ai_column_max_retries_, ai_column_version_);
   return len;
 }
 
@@ -522,7 +539,45 @@ int ObColumnSchemaV2::convert_column_id(const hash::ObHashMap<uint64_t, uint64_t
 {
   int ret = OB_SUCCESS;
   ObSEArray<uint64_t, 1> old_column_ids;
-  if (OB_FAIL(get_cascaded_column_ids(old_column_ids))) {
+  if (is_ai_column()) {
+    ObSqlString dependencies;
+    const ObString old_dependencies = get_ai_column_deps();
+    uint64_t old_id = 0;
+    for (int64_t i = 0; OB_SUCC(ret) && i < old_dependencies.length(); ++i) {
+      const char c = old_dependencies[i];
+      if (c >= '0' && c <= '9' && old_id <= (UINT64_MAX - (c - '0')) / 10) {
+        old_id = old_id * 10 + (c - '0');
+      } else if (c != ',') { ret = OB_SCHEMA_ERROR; }
+      if (OB_SUCC(ret) && (c == ',' || i + 1 == old_dependencies.length())) {
+        uint64_t new_id = 0;
+        if (OB_FAIL(column_id_map.get_refactored(old_id, new_id))) {
+        } else if (OB_FAIL(dependencies.append_fmt("%s%lu", dependencies.empty() ? "" : ",", new_id))) {
+        }
+        old_id = 0;
+      }
+    }
+    if (OB_SUCC(ret)) { ret = set_ai_column_deps(dependencies.string()); }
+  } else if (is_ai_column_state()) {
+    const ObString old_name = get_column_name_str();
+    uint64_t owner_id = 0, new_owner_id = 0;
+    int64_t end = 5; // __ai_<owner column ID>_<field>
+    if (!old_name.prefix_match("__ai_")) { ret = OB_SCHEMA_ERROR; }
+    while (OB_SUCC(ret) && end < old_name.length() && old_name[end] >= '0' && old_name[end] <= '9') {
+      const uint64_t digit = old_name[end++] - '0';
+      if (owner_id > (UINT64_MAX - digit) / 10) { ret = OB_SCHEMA_ERROR; }
+      else { owner_id = owner_id * 10 + digit; }
+    }
+    ObSqlString new_name;
+    if (OB_FAIL(ret)) {
+    } else if (end == 5 || end >= old_name.length() || old_name[end] != '_') { ret = OB_SCHEMA_ERROR; }
+    else if (OB_FAIL(column_id_map.get_refactored(owner_id, new_owner_id))) {
+    } else if (OB_FAIL(new_name.assign_fmt("__ai_%lu_%.*s", new_owner_id,
+                    static_cast<int>(old_name.length() - end - 1), old_name.ptr() + end + 1))) {
+    } else if (OB_FAIL(set_column_name(new_name.string()))) {
+    }
+  }
+  if (OB_FAIL(ret)) {
+  } else if (OB_FAIL(get_cascaded_column_ids(old_column_ids))) {
   } else {
     for (int64_t i = 0; OB_SUCC(ret) && i < old_column_ids.count(); i++) {
       const uint64_t old_column_id = old_column_ids.at(i);
