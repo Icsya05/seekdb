@@ -53,7 +53,7 @@ cuvsError_t cuvsCagraSearchParamsDestroy(cuvsCagraSearchParams_t p) { --params_l
 cuvsError_t cuvsCagraIndexCreate(cuvsCagraIndex_t *p) { *p=new std::remove_pointer<cuvsCagraIndex_t>::type{}; return CUVS_SUCCESS; }
 cuvsError_t cuvsCagraIndexDestroy(cuvsCagraIndex_t p) { delete[] p->base; delete p; return CUVS_SUCCESS; }
 cuvsError_t cuvsCagraBuild(cuvsResources_t,cuvsCagraIndexParams_t ip,DLManagedTensor *data,cuvsCagraIndex_t idx) {
-  REQUIRE(ip->build_algo==NN_DESCENT && ip->graph_degree==128 && ip->intermediate_graph_degree==256 && ip->nn_descent_niter==100);
+  REQUIRE(ip->build_algo==NN_DESCENT && ip->graph_degree==128 && ip->intermediate_graph_degree==256 && ip->nn_descent_niter==80);
   idx->n=data->dl_tensor.shape[0]; idx->dim=data->dl_tensor.shape[1];
   idx->base=new float[idx->n*idx->dim];
   std::memcpy(idx->base,data->dl_tensor.data,idx->n*idx->dim*sizeof(float)); return CUVS_SUCCESS;

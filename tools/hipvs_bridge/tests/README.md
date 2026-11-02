@@ -51,7 +51,7 @@ The fake search computes CPU exact L2 on a tiny hand-checkable fixture solely to
 make copy/output-buffer mistakes visible; production search is unchanged and still
 calls the fixed hipVS CAGRA implementation.
 
-## Real GPU checks still required
+## Real GPU validation protocol
 
 1. On the competition image confirm ROCm 7.2.4 and fixed hipVS commit. Compile with
    `tools/hipvs_bridge/build.sh /work/bridge/libseekdb_cuvs_bridge.so` using the
@@ -62,7 +62,8 @@ calls the fixed hipVS CAGRA implementation.
 3. Run baseline/candidate paired single-SQL-query benchmarks, Top-10 and Top-100,
    for both 250K x 128 and 250K x 256 input shapes; collect build+first-query
    wall time, recall, QPS and peak GPU memory. Follow the published 4096-query
-   scoring protocol rather than batch_knn. No measured speedup is claimed yet.
+   scoring protocol rather than batch_knn. Scoped development measurements are recorded in
+   [the 2026-11-02 report](../validation/20261102/README.md); they are not official results.
 4. Verify unchanged CPU `lib=vsag` operations and post-restart GPU serving before
    selecting any candidate for submission.
 
@@ -70,7 +71,8 @@ Free requires exclusive handle ownership. Search/serialize serialize internally;
 retained allocations last until handle destruction and grow only as needed.
 For a single query with dim=256 and Top-100, user buffer capacity is 1824 bytes
 (excluding hipVS/RMM overhead). Build parameters remain NN_DESCENT, 128/256 graph
-degrees and 100 iterations; search preserves the original default/minimum rules.
+degrees and 80 iterations on this experimental branch (100 on the conservative branch);
+search preserves the original default/minimum rules.
 
 ## Persistence smoke control flow
 
